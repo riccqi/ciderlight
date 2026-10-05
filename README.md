@@ -3,9 +3,7 @@
 A Fabric mod for Minecraft Java **26.3** that adds a native **Apple Metal** rendering backend and a
 built-in, Metal-native shader pipeline.
 
-Download from 
-Modrinth: https://modrinth.com/mod/ciderlight
-CurseForge: https://www.curseforge.com/minecraft/mc-mods/ciderlight
+Download from [Modrinth](https://modrinth.com/mod/ciderlight) or [CurseForge](https://www.curseforge.com/minecraft/mc-mods/ciderlight).
 
 Minecraft 26.3 split its renderer into swappable backends (OpenGL and Vulkan). Ciderlight adds a third that talks to
 Metal through a small Objective-C bridge (`src/main/native/ciderlight.m`) called via Java's FFM API. The game's GLSL
