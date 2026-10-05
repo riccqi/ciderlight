@@ -103,3 +103,40 @@ static float3 water_absorption(float3 vertexColor) {
     float3 tint = clamp(vertexColor / max(peak, 1e-4), 0.05, 1.0);
     return (-log(tint) + float3(0.04, 0.03, 0.05)) * 0.2;
 }
+
+struct WaterFace {
+    float3 tilt;      // world-space offset to add to the face normal (in the face's plane)
+    float variance;   // as WaterWaves.variance
+};
+
+// Waves on a water face of any orientation. Each world plane the face leans towards contributes its own waves,
+// weighted by how far the face leans, so a flowing slope or the side of a waterfall carries the same surface as
+// the still water beside it without a seam. Waves on vertical sheets also run downwards, as falling water does.
+// Rain ripples land on the level part only.
+static WaterFace water_face_waves(float3 world, float3 n, float time, float footprint, float rain) {
+    float3 w = pow(abs(n), float3(4.0));
+    w /= w.x + w.y + w.z;
+    WaterFace f = {float3(0.0), 0.0};
+    if (w.y > 0.02) {
+        WaterWaves top = water_waves(world.xz, time, footprint, rain);
+        float2 g = top.slope;
+        if (rain > 0.0) {
+            g += water_rain_ripples(world.xz, time, footprint) * rain;
+        }
+        f.tilt += float3(-g.x, 0.0, -g.y) * w.y;
+        f.variance += top.variance * w.y;
+    }
+    float fall = time * 1.6;
+    if (w.x > 0.02) {
+        WaterWaves side = water_waves(float2(world.z, world.y + fall), time, footprint, 0.0);
+        f.tilt += float3(0.0, -side.slope.y, -side.slope.x) * w.x;
+        f.variance += side.variance * w.x;
+    }
+    if (w.z > 0.02) {
+        WaterWaves side = water_waves(float2(world.x, world.y + fall), time, footprint, 0.0);
+        f.tilt += float3(-side.slope.x, -side.slope.y, 0.0) * w.z;
+        f.variance += side.variance * w.z;
+    }
+    f.tilt -= n * dot(f.tilt, n);
+    return f;
+}

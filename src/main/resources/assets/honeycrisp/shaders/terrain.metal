@@ -366,8 +366,9 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
 #endif
 
 #ifdef MC_REFLECT
-    // Water seen from above is shaded completely here: wave normals, refraction of the opaque scene behind it,
-    // absorption by the water's thickness, shoreline foam, screen-space reflections and the sun's glint.
+    // Water seen from above or from the side is shaded completely here: wave normals, refraction of the opaque scene
+    // behind it, absorption by the water's thickness, shoreline foam, screen-space reflections and the sun's glint.
+    // Top, sides and slopes of flowing water all take this path, so they match where they meet.
     // Ice and glass keep their vanilla look and are blended as before.
     bool waterSurface = false;
     {
@@ -382,7 +383,8 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
         if (!water && n.y > 0.7 && sprite_kind(spriteMap, in.uv0) == SPRITE_ICE) {
             color.a = max(color.a, 0.94);
         }
-        if (water && n.y > 0.7) {
+        // Only the underside, seen from below, keeps the vanilla look.
+        if (water && n.y > -0.3) {
             waterSurface = true;
             constexpr sampler nearestClamp(filter::nearest, address::clamp_to_edge);
             constexpr sampler linearClamp(filter::linear, address::clamp_to_edge);
@@ -399,14 +401,9 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             float cosView = saturate(dot(-V, n));
 
             // --- wave normal ---
-            WaterWaves waves = water_waves(absPos.xz, t, footprint, rain);
-            float2 slope = waves.slope;
-            if (rain > 0.0) {
-                slope += water_rain_ripples(absPos.xz, t, footprint) * rain;
-            }
+            WaterFace waves = water_face_waves(absPos, n, t, footprint, rain);
             // Flatter at grazing angles, where steep normals would point into the water.
-            slope *= 0.3 + 0.7 * cosView;
-            float3 nn = normalize(n + float3(-slope.x, 0.0, -slope.y));
+            float3 nn = normalize(n + waves.tilt * (0.3 + 0.7 * cosView));
 
             // --- thickness of water behind this pixel, from the opaque depth snapshot ---
             float2 depthCoef = reflection_depth_coefficients(vp);
@@ -455,7 +452,8 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
 
             // --- shoreline foam where the water is only a sliver deep ---
             float vertical = thickness0 * saturate(-V.y);
-            float edge = (1.0 - smoothstep(0.0, 0.3, vertical)) * (behindW < 1e4 ? 1.0 : 0.0);
+            // Level water only: a waterfall is always thin against the cliff it runs down.
+            float edge = (1.0 - smoothstep(0.0, 0.3, vertical)) * (behindW < 1e4 ? 1.0 : 0.0) * smoothstep(0.6, 0.85, n.y);
             float foamNoise = water_noise(absPos.xz * 2.3 + float2(t * 0.21, -t * 0.13)).x * 0.6
                             + water_noise(absPos.xz * 5.7 - float2(t * 0.37, t * 0.29)).x * 0.4;
             float foam = edge * edge * smoothstep(0.4, 0.95, foamNoise + edge * 0.3) * 0.32;
