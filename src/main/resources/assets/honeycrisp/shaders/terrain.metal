@@ -274,13 +274,20 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
         // Foliage (biome-tinted cutouts: leaves, grass, vines) is thin, so sunlight passes through it: lit evenly
         // from any side, taking only the light that reaches it.
         // Crossed plants (flowers, saplings, dead bushes) are just as thin, whatever their tint.
-        // A grass block is tinted too but solid: its top and the green fringe on its sides are lit like the dirt.
+        // A grass block is tinted too but solid: up close its top and the green fringe on its sides are lit like the
+        // dirt. Further off they take the even foliage light again: the bright fringe outlines every step of a distant
+        // hill, which without it reads as a mass of brown pixels.
         float tintSpread = max(in.color.r, max(in.color.g, in.color.b)) - min(in.color.r, min(in.color.g, in.color.b));
-        bool foliage = tintSpread > 0.08 && foliage_kind(spriteMap, in.uv0) != FOLIAGE_NONE;
+        bool tinted = tintSpread > 0.08;
+        bool foliage = tinted && foliage_kind(spriteMap, in.uv0) != FOLIAGE_NONE;
         bool crossed = abs(faceNormal.y) < 0.3 && abs(abs(faceNormal.x) - abs(faceNormal.z)) < 0.35;
         if (foliage || crossed) {
             facing = 0.85;
             ndotl = 1.0;
+        } else if (tinted) {
+            float far = smoothstep(32.0, 48.0, length(in.worldPos));
+            facing = mix(facing, 0.85, far);
+            ndotl = mix(ndotl, 1.0, far);
         }
 #endif
         float3 vis = ndotl > 0.0 ? shadow_visibility(frame, shadowMap, shadowSampler, shadowColor, cloudShadow, in.worldPos, n, ndotl) : float3(0.0);
