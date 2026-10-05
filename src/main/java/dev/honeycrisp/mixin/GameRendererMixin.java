@@ -3,6 +3,7 @@ package dev.honeycrisp.mixin;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.renderpearl.api.GpuFormat;
+import dev.honeycrisp.backend.MetalShaders;
 import dev.honeycrisp.backend.RenderScale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
@@ -14,6 +15,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Draws the world at a fraction of the window's resolution (RenderScale), and the HUD and menus at the full one.
@@ -38,6 +40,17 @@ public class GameRendererMixin {
     private @Nullable RenderTarget honeycrisp$world;
     @Unique
     private boolean honeycrisp$swapped;
+
+    /**
+     * Improved Transparency draws the world in a "Solid" pass and the translucents in separate OIT passes, which
+     * Honeycrisp's lighting (keyed to the "Main" pass) and water don't follow; with shaders on the classic path is used.
+     */
+    @Inject(method = "useImprovedTransparency", at = @At("HEAD"), cancellable = true)
+    private void honeycrisp$classicTransparency(final CallbackInfoReturnable<Boolean> cir) {
+        if (MetalShaders.ENABLED) {
+            cir.setReturnValue(false);
+        }
+    }
 
     @Inject(method = "resize", at = @At("RETURN"))
     private void honeycrisp$resizeWorld(final int width, final int height, final CallbackInfo ci) {
