@@ -9,7 +9,8 @@ import org.slf4j.Logger;
  * How much the shader pipeline spends on a frame. LOW is for phone-class GPUs (the A-series chip in the MacBook Neo),
  * which have about a third of an M-series GPU: smaller shadow maps, a coarser fog and ambient-occlusion buffer, and
  * shorter fog and reflection marches, and the world drawn at two thirds of the window's resolution (RenderScale).
- * -Dhoneycrisp.quality=low|high overrides the choice made from the GPU's name.
+ * The Shaders setting in Video Settings (ShaderSetting) overrides the choice made from the GPU's name, and
+ * -Dhoneycrisp.quality=low|high overrides both.
  */
 enum Quality {
     //   shadow, far, far beyond FAR_SHADOW_FINE_RADIUS, fog rows, AO rows, render scale
@@ -49,6 +50,11 @@ enum Quality {
         return this == LOW ? "#define MC_QUALITY_LOW 1\n" : "";
     }
 
+    /** The quality chosen at startup, or null before the Metal device exists (or when it never does). */
+    static synchronized @Nullable Quality chosen() {
+        return chosen;
+    }
+
     /** The quality for this GPU, chosen (and logged) once. */
     static synchronized Quality of(final String deviceName) {
         if (chosen == null) {
@@ -63,10 +69,12 @@ enum Quality {
             case "low" -> LOW;
             case "high" -> HIGH;
             // "Apple A18 Pro" and the like; the Macs' own chips are "Apple M1" onwards.
-            default -> deviceName.startsWith("Apple A") ? LOW : HIGH;
+            default -> ShaderSetting.saved() == ShaderSetting.LOW ? LOW
+                : ShaderSetting.saved() == ShaderSetting.HIGH ? HIGH
+                : deviceName.startsWith("Apple A") ? LOW : HIGH;
         };
         LOGGER.info("Honeycrisp: {} quality for {}, world at {}% resolution{}", quality.name().toLowerCase(Locale.ROOT), deviceName,
-            Math.round(quality.renderScale * 100.0F), forced.equals("auto") ? " (-Dhoneycrisp.quality=low|high to change)" : "");
+            Math.round(quality.renderScale * 100.0F), forced.equals("auto") ? " (Video Settings > Shaders to change)" : "");
         return quality;
     }
 }

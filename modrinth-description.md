@@ -49,6 +49,7 @@ Honeycrisp doesn't need Fabric API. It is client-side only, so it works on any s
 
 - It hasn't been tested with other rendering mods (Sodium, Iris and similar). Try it on its own first.
 - OptiFine and Iris shader packs aren't supported. Honeycrisp has its own shaders instead.
+- Shaders can be set to Off, Low or High in **Options > Video Settings** (takes effect after a restart). Macs with an A-series chip start on Low.
 - Turn it off without uninstalling by adding `-Dhoneycrisp.disable=true` to the JVM arguments.
 
 ## License

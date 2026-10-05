@@ -83,11 +83,13 @@ import org.slf4j.Logger;
  *   <li>A composite pass shadows entities (deferred, from depth), adds light shafts and grades the
  *       image before the hand and HUD are drawn.</li>
  * </ul>
- * Disable with -Dhoneycrisp.shaders=false.
+ * Off when the Shaders setting in Video Settings is Off (ShaderSetting), or with -Dhoneycrisp.shaders=false.
  */
 public final class MetalShaders {
     private static final Logger LOGGER = LogUtils.getLogger();
-    public static final boolean ENABLED = !"false".equals(System.getProperty("honeycrisp.shaders"));
+    public static final boolean ENABLED = System.getProperty("honeycrisp.shaders") != null
+        ? !"false".equals(System.getProperty("honeycrisp.shaders"))
+        : ShaderSetting.saved() != ShaderSetting.OFF;
     private static final boolean DEBUG = Boolean.getBoolean("honeycrisp.shaderDebug");
     private static final boolean VL_HISTORY = !"false".equals(System.getProperty("honeycrisp.vlHistory"));
 

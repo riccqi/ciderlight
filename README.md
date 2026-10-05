@@ -158,7 +158,11 @@ held item) is also drawn at two thirds of the window's resolution in each direct
 stretched over the window with a little sharpening; the HUD and menus are still drawn at full resolution.
 `honeycrisp.renderScale=<0.25–1>` sets that fraction at either quality. Every other GPU gets high quality, as described
 above.
-`honeycrisp.quality=low` or `=high` overrides the choice (dev client: `-Pquality=low`); the log names the one in use.
+Players choose in **Options > Video Settings > Quality & Performance > Shaders**: Off (the Metal renderer with
+Minecraft's own look), Low or High. Until they pick one, A-series GPUs get Low and the rest High. The choice is saved to
+`config/honeycrisp.properties` (`shaders=off|low|high`) and applies after a restart; Video Settings shows its
+"restart required" notice until then. `honeycrisp.quality=low` or `=high` and `honeycrisp.shaders=false` override the
+setting (dev client: `-Pquality=low`); the log names the quality in use.
 `honeycrisp.waterReflections=false` leaves water mirroring only the sky, at any quality.
 
 Options (JVM `-D` flags): `honeycrisp.quality=low|high`, `honeycrisp.renderScale=0.67`, `honeycrisp.shaders=false`, `honeycrisp.shadowSize=2048`,

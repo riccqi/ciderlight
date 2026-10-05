@@ -13,7 +13,9 @@
     "EntityRendererMixin",
     "BlockEntityRenderDispatcherMixin",
     "GameRendererMixin",
-    "RenderTargetAccessor"
+    "RenderTargetAccessor",
+    "VideoSettingsScreenMixin",
+    "OptionsMixin"
   ],
   "injectors": {
     "defaultRequire": 1
