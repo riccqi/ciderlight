@@ -70,6 +70,21 @@ public final class Benchmark {
         lastAutoTurn = now;
     }
 
+    private static net.minecraft.client.gui.screens.@org.jspecify.annotations.Nullable Screen answeredPrompt;
+
+    /**
+     * Unattended runs (the benchmark, autoTurn/autoWalk) open the world without a backup when Minecraft asks whether
+     * to make one first, as it does for a world of an older version or with experimental settings (the flat test
+     * worlds); nobody is there to press the button, and the run would sit on that screen.
+     */
+    public static void skipBackupPrompt(final Minecraft minecraft) {
+        if (minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.BackupConfirmScreen prompt && prompt != answeredPrompt) {
+            answeredPrompt = prompt;
+            LOGGER.info("Honeycrisp bench: opening the world without the backup Minecraft asked about");
+            ((dev.honeycrisp.mixin.BackupConfirmScreenAccessor)prompt).honeycrisp$onProceed().proceed(false, false);
+        }
+    }
+
     public static void onTick(final Minecraft minecraft) {
         // -Dhoneycrisp.benchFlatWorld=<name>: from the title screen, open that save, creating it first as a creative
         // superflat world (no water, no structures) if it does not exist yet.

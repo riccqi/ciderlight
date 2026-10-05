@@ -16,7 +16,8 @@
     "RenderTargetAccessor",
     "VideoSettingsScreenMixin",
     "OptionsMixin",
-    "RenderPipelinesMixin"
+    "RenderPipelinesMixin",
+    "BackupConfirmScreenAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

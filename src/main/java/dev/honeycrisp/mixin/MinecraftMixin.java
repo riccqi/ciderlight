@@ -17,6 +17,9 @@ public class MinecraftMixin {
             Benchmark.onTick((Minecraft)(Object)this);
         }
         Minecraft minecraft = (Minecraft)(Object)this;
+        if (Benchmark.enabled() || Benchmark.autoMoves()) {
+            Benchmark.skipBackupPrompt(minecraft);
+        }
         FramePacer.worldTick(minecraft.level != null, minecraft.gui.screen() == null);
         if (HitchTrace.ENABLED) {
             HitchTrace.tickStart(minecraft.level != null, minecraft.gui.screen() == null);
