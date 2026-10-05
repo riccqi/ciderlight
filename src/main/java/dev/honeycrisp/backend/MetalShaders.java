@@ -428,7 +428,7 @@ public final class MetalShaders {
     record EntityDraw(
         int[] shadowDescriptor, long vertexBuffer, long vertexOffset, long indexBuffer, int indexType, int indexCount, int firstIndex,
         int vertexBase, int instanceCount, int firstInstance, long transforms, long transformsOffset, long atlas, long atlasSampler,
-        boolean particle, boolean particleAtlas
+        boolean particle, boolean particleAtlas, boolean emissive
     ) {
     }
 
@@ -502,6 +502,10 @@ public final class MetalShaders {
             return;
         }
         int kind = pipeline.terrainKind();
+        if (pipeline.isEmissiveLayer()) {
+            this.prebuild(entityEmissiveKey(descriptor), () -> this.buildEntityEmissiveState(descriptor));
+            return;
+        }
         if (kind == KIND_NONE) {
             this.prebuild(entityShadowKey(descriptor), () -> this.buildEntityShadowState(descriptor));
             this.prebuild(entityLightKey(false, descriptor), () -> this.buildEntityLightState(false, descriptor));
@@ -541,6 +545,10 @@ public final class MetalShaders {
 
     private static String entityLightKey(final boolean particle, final int[] descriptor) {
         return "Honeycrisp " + (particle ? "particle" : "entity") + " light " + Arrays.toString(descriptor);
+    }
+
+    private static String entityEmissiveKey(final int[] descriptor) {
+        return "Honeycrisp emissive layer " + Arrays.toString(descriptor);
     }
 
     private long compositeLibrary() {
@@ -638,6 +646,14 @@ public final class MetalShaders {
         long library = this.entityLibrary();
         return MetalNative.pipelineCreate(
             this.device.context(), library, "entity_shadow_vertex", library, "entity_shadow_fragment", descriptor, "Honeycrisp entity shadow"
+        );
+    }
+
+    private long buildEntityEmissiveState(final int[] descriptor) {
+        long library = this.entityLibrary();
+        return MetalNative.pipelineCreate(
+            this.device.context(), library, "entity_emissive_vertex", library, "entity_emissive_fragment", alphaOnlyDescriptor(descriptor),
+            "Honeycrisp emissive layer"
         );
     }
 
@@ -825,6 +841,11 @@ public final class MetalShaders {
             case "minecraft:pipeline/translucent_terrain_multidraw" -> KIND_TRANSLUCENT;
             default -> KIND_NONE;
         };
+    }
+
+    /** Glowing eyes (endermen, spiders, phantoms): marked as light sources for the composite, and cast no shadow. */
+    static boolean isEmissiveLayer(final String pipelineName) {
+        return ENABLED && pipelineName.equals("minecraft:pipeline/eyes");
     }
 
     /**
@@ -1221,40 +1242,48 @@ public final class MetalShaders {
         MetalNative.passSetBytes(enc, FRAME_INDEX, this.sampleFrame, FRAME_BYTES, MetalConst.STAGE_VERTEX);
         long currentState = 0L;
         boolean flameSpritesRead = false;
-        for (EntityDraw draw : this.entityDraws) {
-            Long cached = this.entityLightStatesByDescriptor.get(draw.shadowDescriptor());
-            if (cached == null) {
-                boolean particle = draw.particle();
-                int[] descriptor = draw.shadowDescriptor();
-                cached = this.built(entityLightKey(particle, descriptor), () -> this.buildEntityLightState(particle, descriptor));
-                this.entityLightStatesByDescriptor.put(descriptor, cached);
-            }
-            if (cached != currentState) {
-                currentState = cached;
-                // The redraw transforms vertices differently from vanilla's entity shader, so its depth can land a
-                // rounding error behind the mob's own, most on faces seen at a steep angle. Pulling it slightly towards
-                // the camera (reverse-Z: positive bias) keeps those pixels from losing their torch light.
-                // A particle faces the camera, so its depth is the same all over and the slope term gives nothing: without
-                // a much larger constant bias the whole quad fails the test on some frames and the particle flashes.
-                MetalNative.passSetPipeline(enc, cached, this.mainReadDepthState, false, false, draw.particle() ? 256.0F : 1.0F, 2.0F);
-            }
-            if (draw.particle()) {
-                // Block and item debris come through the same pipeline with other atlases: no flames among them.
-                if (draw.particleAtlas() && !flameSpritesRead) {
-                    this.readFlameSprites();
-                    flameSpritesRead = true;
+        // Glowing eyes last: they lie on the body's own faces, whose mark would otherwise replace theirs.
+        for (boolean emissivePass : new boolean[]{false, true}) {
+            for (EntityDraw draw : this.entityDraws) {
+                if (draw.emissive() != emissivePass) {
+                    continue;
                 }
-                MetalNative.passSetBytes(
-                    enc, 0, draw.particleAtlas() ? this.flameSprites : this.noFlameSprites, FLAME_PARTICLES.length * 16, MetalConst.STAGE_FRAGMENT
+                Long cached = this.entityLightStatesByDescriptor.get(draw.shadowDescriptor());
+                if (cached == null) {
+                    boolean particle = draw.particle();
+                    int[] descriptor = draw.shadowDescriptor();
+                    cached = draw.emissive()
+                        ? this.built(entityEmissiveKey(descriptor), () -> this.buildEntityEmissiveState(descriptor))
+                        : this.built(entityLightKey(particle, descriptor), () -> this.buildEntityLightState(particle, descriptor));
+                    this.entityLightStatesByDescriptor.put(descriptor, cached);
+                }
+                if (cached != currentState) {
+                    currentState = cached;
+                    // The redraw transforms vertices differently from vanilla's entity shader, so its depth can land a
+                    // rounding error behind the mob's own, most on faces seen at a steep angle. Pulling it slightly towards
+                    // the camera (reverse-Z: positive bias) keeps those pixels from losing their torch light.
+                    // A particle faces the camera, so its depth is the same all over and the slope term gives nothing: without
+                    // a much larger constant bias the whole quad fails the test on some frames and the particle flashes.
+                    MetalNative.passSetPipeline(enc, cached, this.mainReadDepthState, false, false, draw.particle() ? 256.0F : 1.0F, 2.0F);
+                }
+                if (draw.particle()) {
+                    // Block and item debris come through the same pipeline with other atlases: no flames among them.
+                    if (draw.particleAtlas() && !flameSpritesRead) {
+                        this.readFlameSprites();
+                        flameSpritesRead = true;
+                    }
+                    MetalNative.passSetBytes(
+                        enc, 0, draw.particleAtlas() ? this.flameSprites : this.noFlameSprites, FLAME_PARTICLES.length * 16, MetalConst.STAGE_FRAGMENT
+                    );
+                }
+                MetalNative.passSetVertexBuffer(enc, 0, draw.vertexBuffer(), draw.vertexOffset());
+                MetalNative.passSetBuffer(enc, 0, draw.transforms(), draw.transformsOffset(), MetalConst.STAGE_VERTEX);
+                MetalNative.passSetTexture(enc, 0, draw.atlas(), draw.atlasSampler(), MetalConst.STAGE_FRAGMENT);
+                MetalNative.passDrawIndexed(
+                    enc, MetalConst.PRIM_TRIANGLES, draw.indexCount(), draw.indexType(), draw.indexBuffer(),
+                    (long)draw.firstIndex() * (draw.indexType() == 1 ? 4 : 2), draw.instanceCount(), draw.vertexBase(), draw.firstInstance()
                 );
             }
-            MetalNative.passSetVertexBuffer(enc, 0, draw.vertexBuffer(), draw.vertexOffset());
-            MetalNative.passSetBuffer(enc, 0, draw.transforms(), draw.transformsOffset(), MetalConst.STAGE_VERTEX);
-            MetalNative.passSetTexture(enc, 0, draw.atlas(), draw.atlasSampler(), MetalConst.STAGE_FRAGMENT);
-            MetalNative.passDrawIndexed(
-                enc, MetalConst.PRIM_TRIANGLES, draw.indexCount(), draw.indexType(), draw.indexBuffer(),
-                (long)draw.firstIndex() * (draw.indexType() == 1 ? 4 : 2), draw.instanceCount(), draw.vertexBase(), draw.firstInstance()
-            );
         }
     }
 
@@ -1999,7 +2028,7 @@ public final class MetalShaders {
 
         long currentState = 0L;
         for (EntityDraw draw : this.entityDraws) {
-            if (draw.particle()) {
+            if (draw.particle() || draw.emissive()) {
                 continue;
             }
             long state = this.entityShadowState(draw.shadowDescriptor());

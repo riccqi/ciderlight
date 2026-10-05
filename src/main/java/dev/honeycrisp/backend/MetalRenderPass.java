@@ -500,7 +500,7 @@ public class MetalRenderPass implements RenderPassBackend {
             shadowDesc, this.vertexBuffers[0], this.vertexOffsets[0], ib.handle(), this.indexType, indexCount, firstIndex, vertexOffset,
             instanceCount, firstInstance, ((MetalBuffer)transforms.buffer()).handle(), transforms.offset(),
             ((MetalTextureView)atlas.view()).handle(), ((MetalSampler)atlas.sampler()).handle(), p.isLitParticle(),
-            p.isLitParticle() && this.device.shaders().isParticleAtlas(atlas.view().texture())
+            p.isLitParticle() && this.device.shaders().isParticleAtlas(atlas.view().texture()), p.isEmissiveLayer()
         ));
     }
 

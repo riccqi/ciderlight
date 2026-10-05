@@ -65,6 +65,9 @@ static float encode_entity_light(float blockLight) {
 
 // Between the block-light range and 1: a flame particle, which is a light source itself (see entity_emissive).
 constant float ENTITY_EMISSIVE_ALPHA = 0.975;
+// Glowing eyes (endermen, spiders, phantoms): unshaded like flames, but kept at their own colour, not brightened.
+// Two 8-bit steps above the flames' mark (the scene's alpha is 8 bits).
+constant float ENTITY_GLOW_ALPHA = 0.985;
 
 // Strength of torch/block light at a vanilla block-light level (0-1): a warm falloff with a hot core next to the
 // source. Shared by terrain and the entity composite so mobs are lit like the ground around them.
@@ -129,4 +132,9 @@ static float decode_entity_light(float alpha) {
 
 static bool entity_emissive(float alpha) {
     return alpha > 0.9625 && alpha < 0.995;
+}
+
+// A flame (ENTITY_EMISSIVE_ALPHA) rather than glowing eyes (ENTITY_GLOW_ALPHA); both are entity_emissive.
+static bool entity_flame(float alpha) {
+    return alpha > 0.9625 && alpha < 0.98;
 }

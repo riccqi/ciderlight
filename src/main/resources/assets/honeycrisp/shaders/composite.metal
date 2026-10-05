@@ -360,8 +360,9 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
     // Deferred shadows and night darkening for non-terrain geometry (terrain already lit itself and wrote alpha below 0.5).
     // Alpha in [0.5, 0.95] carries the entity's block light from the marker pass; 1 means no information.
     // Flame particles are light sources: full brightness and unshaded, like the flames of blocks (terrain.metal).
+    // Glowing eyes are unshaded too, at their own colour.
     bool emissive = entity_emissive(scene.a) && !isSky;
-    if (emissive) {
+    if (emissive && entity_flame(scene.a)) {
         color *= 1.25;
     }
     if (scene.a >= 0.5 && !isSky && !emissive) {

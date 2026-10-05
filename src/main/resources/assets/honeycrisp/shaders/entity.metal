@@ -84,6 +84,29 @@ vertex LightOut entity_light_vertex(LightIn in [[stage_in]],
     return out;
 }
 
+// Glowing eyes (endermen, spiders, phantoms) are a layer drawn over the mob at full brightness: marked as light
+// sources, so the composite leaves them unshaded instead of tinting them with the sky light as it does the body under
+// them. Drawn after every body draw, so the body's own mark does not cover them.
+vertex ShadowOut entity_emissive_vertex(EntityIn in [[stage_in]],
+                                        constant DynamicTransforms &dyn [[buffer(0)]],
+                                        constant FrameData &frame [[buffer(14)]]) {
+    ShadowOut out;
+    float4 world = frame.invView * (dyn.ModelViewMat * float4(in.Position, 1.0));
+    out.position = frame.viewProj * float4(world.xyz, 1.0);
+    out.position.y = -out.position.y;
+    out.uv0 = in.UV0;
+    return out;
+}
+
+fragment float4 entity_emissive_fragment(ShadowOut in [[stage_in]],
+                                         texture2d<float> atlas [[texture(0)]],
+                                         sampler atlasSampler [[sampler(0)]]) {
+    if (atlas.sample(atlasSampler, in.uv0).a < 0.1) {
+        discard_fragment();
+    }
+    return float4(0.0, 0.0, 0.0, ENTITY_GLOW_ALPHA);
+}
+
 // Particles: vanilla's particle vertex format puts UV0 at location 1 and UV2 at location 3.
 struct ParticleLightIn {
     float3 Position [[attribute(0)]];

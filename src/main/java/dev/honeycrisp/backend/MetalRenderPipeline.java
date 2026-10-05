@@ -49,6 +49,7 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
     private final int @org.jspecify.annotations.Nullable [] entityUniforms;
     private final int @org.jspecify.annotations.Nullable [] cloudUniforms;
     private final boolean litParticle;
+    private final boolean emissiveLayer;
     /** Terrain pipelines: stride of the per-section instance data and where the section's block position is in it (-1: unknown). */
     private final int sectionStride;
     private final int sectionPosOffset;
@@ -112,7 +113,8 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
         }
         this.sectionStride = sectionStride;
         this.sectionPosOffset = sectionPosOffset;
-        boolean entity = MetalShaders.castsEntityShadow(info.name()) || this.litParticle;
+        this.emissiveLayer = MetalShaders.isEmissiveLayer(info.name());
+        boolean entity = MetalShaders.castsEntityShadow(info.name()) || this.litParticle || this.emissiveLayer;
         this.shadowDescriptor = this.terrainKind != MetalShaders.KIND_NONE || entity ? MetalShaders.shadowDescriptor(this.baseDescriptor) : null;
         this.entityUniforms = entity ? MetalShaders.indicesFor(info.uniforms(), "DynamicTransforms", "Sampler0") : null;
         this.cloudUniforms = isOpaqueCloud(info.name()) ? MetalShaders.indicesFor(info.uniforms(), "DynamicTransforms", "CloudInfo", "CloudFaces") : null;
@@ -551,6 +553,11 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
     /** Opaque particles: captured like entities for the block-light marker, but cast no shadow. */
     boolean isLitParticle() {
         return this.litParticle;
+    }
+
+    /** Glowing eyes: captured only to be marked as light sources (MetalShaders.markEntityLight), never as shadow casters. */
+    boolean isEmissiveLayer() {
+        return this.emissiveLayer;
     }
 
     /** Slots of DynamicTransforms and Sampler0 for shadow-casting entity pipelines and lit particles, else null. */
