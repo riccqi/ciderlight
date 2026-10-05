@@ -52,12 +52,13 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
     /** Terrain pipelines: stride of the per-section instance data and where the section's block position is in it (-1: unknown). */
     private final int sectionStride;
     private final int sectionPosOffset;
-    private long withDepth;
-    private long withoutDepth;
+    /** Pipeline states by variant (variant()): with or without a depth attachment, for the world or the hand. */
+    private final long[] states = new long[4];
+    /** Variants started in the background when the pipeline was compiled (prebuildVariants), taken by stateFor. */
+    @SuppressWarnings("unchecked")
+    private final java.util.concurrent.CompletableFuture<Long>[] variantBuilds = new java.util.concurrent.CompletableFuture[4];
     /** Fragment library with the metal shine for items held in first person (0: this pipeline has none). */
     private long handFragmentLibrary;
-    private long handWithDepth;
-    private long handWithoutDepth;
     private boolean closed;
 
     private MetalRenderPipeline(
@@ -321,6 +322,8 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
             java.util.Arrays.fill(uniformStages, MetalConst.STAGE_VERTEX | MetalConst.STAGE_FRAGMENT);
             MetalRenderPipeline pipeline = new MetalRenderPipeline(device, info, lib, "terrain_vertex", lib, "terrain_fragment", uniformStages, 0);
             pipeline.stateFor(true);
+            pipeline.prebuildVariants();
+            device.shaders().prebuildFor(pipeline);
             return pipeline;
         }
         if (MetalShaders.isLitParticle(info.name())) {
@@ -330,6 +333,7 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
                 java.util.Arrays.fill(uniformStages, MetalConst.STAGE_VERTEX | MetalConst.STAGE_FRAGMENT);
                 MetalRenderPipeline pipeline = new MetalRenderPipeline(device, info, lib, "particle_vertex", lib, "particle_fragment", uniformStages, 0);
                 pipeline.stateFor(info.depthStencilState() != null);
+                pipeline.prebuildVariants();
                 return pipeline;
             } catch (IllegalStateException e) {
                 LOGGER.warn("Honeycrisp: particles keep vanilla lighting, the particle shader could not be used for {}: {}", info.name(), e.getMessage());
@@ -399,6 +403,8 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
             }
             // Build the variant the pipeline will most likely be used with now, the other on demand.
             pipeline.stateFor(info.depthStencilState() != null);
+            pipeline.prebuildVariants();
+            device.shaders().prebuildFor(pipeline);
             return pipeline;
         } catch (RuntimeException e) {
             if (vertLib != 0L) {
@@ -470,44 +476,55 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
         return d.toIntArray();
     }
 
-    /** Pipeline state matching a pass with or without a depth attachment, created on first use. */
+    /** Pipeline state matching a pass with or without a depth attachment. */
     long stateFor(final boolean hasDepth) {
-        long state = hasDepth ? this.withDepth : this.withoutDepth;
-        if (state != 0L) {
-            return state;
-        }
-        int[] desc = this.baseDescriptor.clone();
-        desc[desc.length - 2] = hasDepth ? DEPTH_FORMAT : -1;
-        state = MetalNative.pipelineCreate(
-            this.device.context(), this.vertexLibrary, this.vertexEntry, this.fragmentLibrary, this.fragmentEntry, desc, this.name
-        );
-        if (hasDepth) {
-            this.withDepth = state;
-        } else {
-            this.withoutDepth = state;
+        return this.stateFor(hasDepth, false);
+    }
+
+    /** The state for a pass with or without depth, for the first-person hand pass with the metal shine where this pipeline has it. */
+    long stateFor(final boolean hasDepth, final boolean hand) {
+        boolean shine = hand && this.handFragmentLibrary != 0L;
+        int variant = variant(hasDepth, shine);
+        long state = this.states[variant];
+        if (state == 0L) {
+            java.util.concurrent.CompletableFuture<Long> build = this.variantBuilds[variant];
+            state = build != null ? Prebuild.take(build, this.name) : this.createState(hasDepth, shine);
+            this.states[variant] = state;
         }
         return state;
     }
 
-    /** The state for the first-person hand pass: with the metal shine where this pipeline has it. */
-    long stateFor(final boolean hasDepth, final boolean hand) {
-        if (!hand || this.handFragmentLibrary == 0L) {
-            return this.stateFor(hasDepth);
-        }
-        long state = hasDepth ? this.handWithDepth : this.handWithoutDepth;
-        if (state == 0L) {
-            int[] desc = this.baseDescriptor.clone();
-            desc[desc.length - 2] = hasDepth ? DEPTH_FORMAT : -1;
-            state = MetalNative.pipelineCreate(
-                this.device.context(), this.vertexLibrary, this.vertexEntry, this.handFragmentLibrary, this.fragmentEntry, desc, this.name + " (hand)"
-            );
-            if (hasDepth) {
-                this.handWithDepth = state;
-            } else {
-                this.handWithoutDepth = state;
+    private static int variant(final boolean hasDepth, final boolean hand) {
+        return (hand ? 2 : 0) + (hasDepth ? 0 : 1);
+    }
+
+    /**
+     * Starts building the variants nobody has asked for yet in the background: the other depth variant and the hand
+     * ones. Pipelines are not always drawn into the kind of pass their depth state suggests (the sky, the vignette, the
+     * crosshair), and building that variant on the render thread when it first came up took a frame's time with a cold
+     * shader cache. Called while the pipeline is compiled, before anything draws with it.
+     */
+    private void prebuildVariants() {
+        for (boolean hand : new boolean[]{false, true}) {
+            if (hand && this.handFragmentLibrary == 0L) {
+                continue;
+            }
+            for (boolean hasDepth : new boolean[]{true, false}) {
+                int variant = variant(hasDepth, hand);
+                if (this.states[variant] == 0L) {
+                    this.variantBuilds[variant] = Prebuild.start(() -> this.createState(hasDepth, hand));
+                }
             }
         }
-        return state;
+    }
+
+    private long createState(final boolean hasDepth, final boolean hand) {
+        int[] desc = this.baseDescriptor.clone();
+        desc[desc.length - 2] = hasDepth ? DEPTH_FORMAT : -1;
+        return MetalNative.pipelineCreate(
+            this.device.context(), this.vertexLibrary, this.vertexEntry, hand ? this.handFragmentLibrary : this.fragmentLibrary, this.fragmentEntry, desc,
+            hand ? this.name + " (hand)" : this.name
+        );
     }
 
     int @org.jspecify.annotations.Nullable [] skyUniforms() { return this.skyUniforms; }
@@ -628,8 +645,12 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
     @Override
     public void destroy() {
         long fragment = this.fragmentLibrary == this.vertexLibrary ? 0L : this.fragmentLibrary;
-        for (long handle : new long[]{this.withDepth, this.withoutDepth, this.handWithDepth, this.handWithoutDepth, this.handFragmentLibrary,
-            this.vertexLibrary, fragment}) {
+        for (int variant = 0; variant < this.states.length; variant++) {
+            if (this.variantBuilds[variant] != null) {
+                Prebuild.releaseWhenDone(this.variantBuilds[variant], this.states[variant]);
+            }
+        }
+        for (long handle : new long[]{this.states[0], this.states[1], this.states[2], this.states[3], this.handFragmentLibrary, this.vertexLibrary, fragment}) {
             if (handle != 0L) {
                 MetalNative.release(handle);
             }

@@ -248,15 +248,20 @@ public final class MetalShaders {
     /** Whether opaque particles are drawn with particle.metal, which lights them itself (else vanilla's lightmap). */
     private volatile boolean particlesLit;
     private final String compositeSource;
+    /**
+     * Libraries and pipeline states by name, built on background threads ahead of the frame that first needs them
+     * (Prebuild): those with fixed inputs as soon as the device exists (startPrebuild), the shadow and entity-light ones
+     * as Minecraft's pipelines are compiled (prebuildFor). Owns everything it built (destroy).
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Long>> built =
+        new java.util.concurrent.ConcurrentHashMap<>();
     private final MemorySegment sampleFrame = Arena.global().allocate(FRAME_BYTES, 16);
     private final MemorySegment renderFrame = Arena.global().allocate(FRAME_BYTES, 16);
     private final List<TerrainDraw> terrainDraws = new ArrayList<>();
     private final List<EntityDraw> entityDraws = new ArrayList<>();
     private final List<CloudDraw> cloudDraws = new ArrayList<>();
     private long cloudShadowState;
-    private final Map<String, Long> entityShadowStates = new HashMap<>();
-    private final Map<String, Long> entityLightStates = new HashMap<>();
-    /** The same pipelines by descriptor instance (one per Minecraft pipeline), so draws need not build the string key. */
+    /** Entity shadow and light pipelines by descriptor instance (one per Minecraft pipeline), so draws need not build the key. */
     private final Map<int[], Long> entityShadowStatesByDescriptor = new java.util.IdentityHashMap<>();
     private final Map<int[], Long> entityLightStatesByDescriptor = new java.util.IdentityHashMap<>();
     private long cloudMapTexture;
@@ -299,7 +304,6 @@ public final class MetalShaders {
     private final MemorySegment farRenderFrame = Arena.global().allocate(FRAME_BYTES, 16);
     private final long[] extinctionTextures = new long[2];
     private final MemorySegment skyFrame = Arena.global().allocate(FRAME_BYTES, 16);
-    private long skyLibrary;
     private long skyState;
     /**
      * The distant map's depth and glass transmission textures, two of each: the fog samples the front pair while the
@@ -328,12 +332,9 @@ public final class MetalShaders {
     private long shadowSampler;
     private long shadowTranslucentState;
     private long mainReadDepthState;
-    private long shadowLibrary;
     private long shadowSolidState;
     private long shadowCutoutState;
     private long shadowDepthState;
-    private long entityLibrary;
-    private long compositeLibrary;
     private long compositeState;
     private long upscaleState;
     private long shadowHistoryState;
@@ -441,6 +442,211 @@ public final class MetalShaders {
         this.entitySource = quality.defines() + loadSource("entity.metal");
         this.particleSource = quality.defines() + loadSource("particle.metal");
         this.compositeSource = quality.defines() + (Boolean.getBoolean("honeycrisp.aoDebug") ? "#define MC_DEBUG_AO 1\n" : "") + loadSource("composite.metal");
+        if (ENABLED) {
+            this.startPrebuild();
+        }
+    }
+
+    /** Starts building `key` in the background (Prebuild), unless that has already been started or done. */
+    private void prebuild(final String key, final java.util.function.LongSupplier build) {
+        this.built.computeIfAbsent(key, k -> Prebuild.start(build));
+    }
+
+    /** What was built for `key`, waiting for its background build if one is under way; built right here if none was started. */
+    private long built(final String key, final java.util.function.LongSupplier build) {
+        java.util.concurrent.CompletableFuture<Long> future = this.built.get(key);
+        if (future == null) {
+            java.util.concurrent.CompletableFuture<Long> own = new java.util.concurrent.CompletableFuture<>();
+            future = this.built.putIfAbsent(key, own);
+            if (future == null) {
+                future = own;
+                try {
+                    own.complete(build.getAsLong());
+                } catch (RuntimeException e) {
+                    own.completeExceptionally(e);
+                }
+            }
+        }
+        return Prebuild.take(future, key);
+    }
+
+    /** Everything whose inputs are fixed once the device exists: the libraries and the full-screen passes. */
+    private void startPrebuild() {
+        this.prebuild(COMPOSITE_LIBRARY, this::buildCompositeLibrary);
+        this.prebuild(ENTITY_LIBRARY, this::buildEntityLibrary);
+        this.prebuild(SKY_STATE, this::buildSkyState);
+        this.prebuild(FRAME_CONSTANTS_STATE, this.fullscreen("frame_constants_fragment", VOLUMETRIC_FORMAT, FRAME_CONSTANTS_STATE));
+        this.prebuild(SHADOW_HISTORY_STATE, this.fullscreen("shadow_history_fragment", SHADOW_HISTORY_FORMAT, SHADOW_HISTORY_STATE));
+        this.prebuild(VOLUMETRIC_STATE, this::buildVolumetricState);
+        this.prebuild(FOG_NOISE_STATE, this.fullscreen("air_noise_table_fragment", EXTINCTION_FORMAT, FOG_NOISE_STATE));
+        if (AO) {
+            this.prebuild(AO_STATE, this.fullscreen("ao_fragment", AO_FORMAT, AO_STATE));
+            this.prebuild(AO_FILTER_STATE, this.fullscreen("ao_filter_fragment", AO_FORMAT, AO_FILTER_STATE));
+        }
+        if (this.quality.renderScale < 1.0F) {
+            this.prebuild(UPSCALE_STATE, this.fullscreen("upscale_fragment", COLOR_FORMAT, UPSCALE_STATE));
+        }
+        this.prebuild(COMPOSITE_STATE, this.fullscreen("composite_fragment", COLOR_FORMAT, COMPOSITE_STATE));
+        this.prebuild(CLOUD_SHADOW_STATE, this::buildCloudShadowState);
+        this.prebuild(CLOUD_MAP_STATE, this::buildCloudMapState);
+    }
+
+    /**
+     * Starts building what draws with this pipeline will need from the shader pipeline: the shadow library and the
+     * terrain shadow pass for a terrain pipeline, the shadow and block-light passes for one that draws mobs. Called on
+     * the thread that compiles the pipeline, before anything draws with it.
+     */
+    void prebuildFor(final MetalRenderPipeline pipeline) {
+        int[] descriptor = pipeline.shadowDescriptor();
+        if (!ENABLED || descriptor == null || pipeline.isLitParticle()) {
+            return;
+        }
+        int kind = pipeline.terrainKind();
+        if (kind == KIND_NONE) {
+            this.prebuild(entityShadowKey(descriptor), () -> this.buildEntityShadowState(descriptor));
+            this.prebuild(entityLightKey(false, descriptor), () -> this.buildEntityLightState(false, descriptor));
+            return;
+        }
+        this.prebuild(SHADOW_LIBRARY, this::buildShadowLibrary);
+        if (kind == KIND_TRANSLUCENT) {
+            this.prebuild(SHADOW_TRANSLUCENT_STATE, () -> this.buildTranslucentShadowState(descriptor));
+        } else {
+            boolean cutout = kind == KIND_CUTOUT;
+            this.prebuild(cutout ? SHADOW_CUTOUT_STATE : SHADOW_SOLID_STATE, () -> this.buildTerrainShadowState(cutout, descriptor));
+        }
+    }
+
+    private static final String COMPOSITE_LIBRARY = "composite library";
+    private static final String ENTITY_LIBRARY = "entity library";
+    private static final String SHADOW_LIBRARY = "shadow library";
+    private static final String SKY_LIBRARY = "sky library";
+    private static final String SKY_STATE = "Honeycrisp atmospheric sky";
+    private static final String FRAME_CONSTANTS_STATE = "Honeycrisp frame constants";
+    private static final String SHADOW_HISTORY_STATE = "Honeycrisp surface shadow history";
+    private static final String VOLUMETRIC_STATE = "Honeycrisp volumetric";
+    private static final String FOG_NOISE_STATE = "Honeycrisp fog noise";
+    private static final String AO_STATE = "Honeycrisp ambient occlusion";
+    private static final String AO_FILTER_STATE = "Honeycrisp ambient occlusion filter";
+    private static final String UPSCALE_STATE = "Honeycrisp upscale";
+    private static final String COMPOSITE_STATE = "Honeycrisp composite";
+    private static final String CLOUD_SHADOW_STATE = "Honeycrisp cloud shadow";
+    private static final String CLOUD_MAP_STATE = "Honeycrisp cloud shadow map";
+    private static final String SHADOW_SOLID_STATE = "Honeycrisp shadow";
+    private static final String SHADOW_CUTOUT_STATE = "Honeycrisp shadow (cutout)";
+    private static final String SHADOW_TRANSLUCENT_STATE = "Honeycrisp shadow (translucent)";
+
+    private static String entityShadowKey(final int[] descriptor) {
+        return "Honeycrisp entity shadow " + Arrays.toString(descriptor);
+    }
+
+    private static String entityLightKey(final boolean particle, final int[] descriptor) {
+        return "Honeycrisp " + (particle ? "particle" : "entity") + " light " + Arrays.toString(descriptor);
+    }
+
+    private long compositeLibrary() {
+        return this.built(COMPOSITE_LIBRARY, this::buildCompositeLibrary);
+    }
+
+    private long buildCompositeLibrary() {
+        return MetalNative.libraryCreate(this.device.context(), this.compositeSource);
+    }
+
+    private long entityLibrary() {
+        return this.built(ENTITY_LIBRARY, this::buildEntityLibrary);
+    }
+
+    private long buildEntityLibrary() {
+        return MetalNative.libraryCreate(this.device.context(), this.entitySource);
+    }
+
+    private long shadowLibrary() {
+        return this.built(SHADOW_LIBRARY, this::buildShadowLibrary);
+    }
+
+    /** Needs the uniform layout of the terrain pipelines (compileTerrainLibrary) to be known. */
+    private long buildShadowLibrary() {
+        int[] idx;
+        String vertexLayout;
+        synchronized (this) {
+            idx = this.uniformIndices;
+            vertexLayout = this.vertexLayout;
+        }
+        if (idx == null) {
+            throw new IllegalStateException("The shadow library needs a terrain pipeline first");
+        }
+        return MetalNative.libraryCreate(this.device.context(), vertexLayout + header(idx, KIND_SOLID) + this.terrainSource);
+    }
+
+    private long buildSkyState() {
+        long library = this.built(SKY_LIBRARY, () -> MetalNative.libraryCreate(this.device.context(), loadSource("sky.metal")));
+        int[] desc = {0, 0, 1, COLOR_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, DEPTH_FORMAT, MetalConst.PRIM_TRIANGLES};
+        return MetalNative.pipelineCreate(this.device.context(), library, "sky_vertex", library, "sky_fragment", desc, SKY_STATE);
+    }
+
+    /** A full-screen pass of composite.metal drawing into a single target of `format`, without blending. */
+    private java.util.function.LongSupplier fullscreen(final String fragment, final int format, final String label) {
+        return () -> {
+            long library = this.compositeLibrary();
+            int[] desc = {0, 0, 1, format, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
+            return MetalNative.pipelineCreate(this.device.context(), library, "composite_vertex", library, fragment, desc, label);
+        };
+    }
+
+    private long fullscreenState(final String fragment, final int format, final String label) {
+        return this.built(label, this.fullscreen(fragment, format, label));
+    }
+
+    private long buildVolumetricState() {
+        long library = this.compositeLibrary();
+        int[] desc = {0, 0, 2, VOLUMETRIC_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0,
+            EXTINCTION_FORMAT, 1, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
+        return MetalNative.pipelineCreate(this.device.context(), library, "composite_vertex", library, "volumetric_fragment", desc, VOLUMETRIC_STATE);
+    }
+
+    private long buildCloudShadowState() {
+        long library = this.entityLibrary();
+        return MetalNative.pipelineCreate(
+            this.device.context(), library, "cloud_shadow_vertex", library, "cloud_shadow_fragment",
+            translucentShadowDescriptor(new int[]{0, 0, 0, DEPTH_FORMAT, MetalConst.PRIM_TRIANGLES}), CLOUD_SHADOW_STATE
+        );
+    }
+
+    private long buildCloudMapState() {
+        long library = this.entityLibrary();
+        int[] desc = {0, 0, 1, CLOUD_MAP_FORMAT, 15, 1, BlendFactor.DST_COLOR.ordinal(), BlendFactor.ZERO.ordinal(), BlendOp.ADD.ordinal(),
+            BlendFactor.ONE.ordinal(), BlendFactor.ZERO.ordinal(), BlendOp.ADD.ordinal(), -1, MetalConst.PRIM_TRIANGLES};
+        return MetalNative.pipelineCreate(this.device.context(), library, "cloud_map_vertex", library, "cloud_map_fragment", desc, CLOUD_MAP_STATE);
+    }
+
+    private long buildTerrainShadowState(final boolean cutout, final int[] descriptor) {
+        long library = this.shadowLibrary();
+        return MetalNative.pipelineCreate(
+            this.device.context(), library, "shadow_vertex", cutout ? library : 0L, cutout ? "shadow_fragment_cutout" : "", descriptor,
+            cutout ? SHADOW_CUTOUT_STATE : SHADOW_SOLID_STATE
+        );
+    }
+
+    private long buildTranslucentShadowState(final int[] descriptor) {
+        long library = this.shadowLibrary();
+        return MetalNative.pipelineCreate(
+            this.device.context(), library, "shadow_vertex", library, "shadow_fragment_translucent", translucentShadowDescriptor(descriptor),
+            SHADOW_TRANSLUCENT_STATE
+        );
+    }
+
+    private long buildEntityShadowState(final int[] descriptor) {
+        long library = this.entityLibrary();
+        return MetalNative.pipelineCreate(
+            this.device.context(), library, "entity_shadow_vertex", library, "entity_shadow_fragment", descriptor, "Honeycrisp entity shadow"
+        );
+    }
+
+    private long buildEntityLightState(final boolean particle, final int[] descriptor) {
+        long library = this.entityLibrary();
+        // Particles have their own vertex layout (UV0 and UV2 at other attribute locations).
+        String vertex = particle ? "particle_light_vertex" : "entity_light_vertex";
+        String fragment = particle ? (this.particlesLit ? "particle_lit_fragment" : "particle_light_fragment") : "entity_light_fragment";
+        return MetalNative.pipelineCreate(this.device.context(), library, vertex, library, fragment, alphaOnlyDescriptor(descriptor), "Honeycrisp entity light");
     }
 
     public static boolean needsShadowCasters() {
@@ -579,10 +785,8 @@ public final class MetalShaders {
         this.skyFrame.set(ValueLayout.JAVA_FLOAT, SOLAR_OFFSET + 12, 1.0F);
         this.skyFrame.set(ValueLayout.JAVA_FLOAT, 116, minecraft.level.getRainLevel(partialTick));
         this.skyFrame.set(ValueLayout.JAVA_FLOAT, LIGHTNING_OFFSET + 12, this.sampleFrame.get(ValueLayout.JAVA_FLOAT, LIGHTNING_OFFSET + 12));
-        if (this.skyLibrary == 0L) {
-            this.skyLibrary = MetalNative.libraryCreate(this.device.context(), loadSource("sky.metal"));
-            int[] desc = {0, 0, 1, COLOR_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, DEPTH_FORMAT, MetalConst.PRIM_TRIANGLES};
-            this.skyState = MetalNative.pipelineCreate(this.device.context(), this.skyLibrary, "sky_vertex", this.skyLibrary, "sky_fragment", desc, "Honeycrisp atmospheric sky");
+        if (this.skyState == 0L) {
+            this.skyState = this.built(SKY_STATE, this::buildSkyState);
         }
         MetalNative.passSetPipeline(enc, this.skyState, depthState, false, false, 0.0F, 0.0F);
         MetalNative.passSetBytes(enc, 0, this.skyFrame, FRAME_BYTES, BOTH);
@@ -774,15 +978,10 @@ public final class MetalShaders {
     }
 
     private void renderFrameConstants(final long frame) {
-        this.ensureCompositeLibrary();
         if (this.frameConstantsState == 0L) {
             this.frameConstantsTexture = MetalNative.textureCreate(this.device.context(), VOLUMETRIC_FORMAT, 1, 1, 1, 1, 4 | 8);
             MetalNative.setLabel(this.frameConstantsTexture, "Honeycrisp frame constants");
-            int[] desc = {0, 0, 1, VOLUMETRIC_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
-            this.frameConstantsState = MetalNative.pipelineCreate(
-                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "frame_constants_fragment", desc,
-                "Honeycrisp frame constants"
-            );
+            this.frameConstantsState = this.fullscreenState("frame_constants_fragment", VOLUMETRIC_FORMAT, FRAME_CONSTANTS_STATE);
         }
         MetalNative.profileLabel("frame constants");
         long enc = MetalNative.passBeginOverwrite(frame, new long[]{this.frameConstantsTexture}, 1, 1);
@@ -962,7 +1161,7 @@ public final class MetalShaders {
         if (idx == null) {
             return;
         }
-        this.ensureShadowLibrary(idx);
+        this.ensureShadowDepthState();
         Vec3 camera = Minecraft.getInstance().gameRenderer.mainCamera().position();
         Vec3 eye = this.lightningPos.add(0.0, LIGHTNING_HEIGHT, 0.0);
         Vector3f look = new Vector3f((float)(camera.x - eye.x), (float)(camera.y - eye.y), (float)(camera.z - eye.z));
@@ -994,12 +1193,8 @@ public final class MetalShaders {
         this.lightningShadowBolt = this.lightningPos;
     }
 
-    private void ensureShadowLibrary(final int[] idx) {
-        if (this.shadowLibrary == 0L) {
-            this.shadowLibrary = MetalNative.libraryCreate(this.device.context(), this.vertexLayout + header(idx, KIND_SOLID) + this.terrainSource);
-            if (this.entityLibrary == 0L) {
-                this.entityLibrary = MetalNative.libraryCreate(this.device.context(), this.entitySource);
-            }
+    private void ensureShadowDepthState() {
+        if (this.shadowDepthState == 0L) {
             this.shadowDepthState = this.device.depthState(CompareOp.LESS_THAN_OR_EQUAL.ordinal(), true);
         }
     }
@@ -1018,9 +1213,6 @@ public final class MetalShaders {
         if (this.entityDraws.isEmpty()) {
             return;
         }
-        if (this.entityLibrary == 0L) {
-            this.entityLibrary = MetalNative.libraryCreate(this.device.context(), this.entitySource);
-        }
         if (this.mainReadDepthState == 0L) {
             // The main depth buffer is reverse-Z (vanilla's default compare is greater-or-equal), unlike the shadow map.
             this.mainReadDepthState = this.device.depthState(CompareOp.GREATER_THAN_OR_EQUAL.ordinal(), false);
@@ -1032,19 +1224,10 @@ public final class MetalShaders {
         for (EntityDraw draw : this.entityDraws) {
             Long cached = this.entityLightStatesByDescriptor.get(draw.shadowDescriptor());
             if (cached == null) {
-                String key = (draw.particle() ? "particle" : "entity") + Arrays.toString(draw.shadowDescriptor());
-                cached = this.entityLightStates.get(key);
-                if (cached == null) {
-                    // Particles have their own vertex layout (UV0 and UV2 at other attribute locations).
-                    String vertex = draw.particle() ? "particle_light_vertex" : "entity_light_vertex";
-                    String fragment = draw.particle() ? (this.particlesLit ? "particle_lit_fragment" : "particle_light_fragment") : "entity_light_fragment";
-                    cached = MetalNative.pipelineCreate(
-                        this.device.context(), this.entityLibrary, vertex, this.entityLibrary, fragment,
-                        alphaOnlyDescriptor(draw.shadowDescriptor()), "Honeycrisp entity light"
-                    );
-                    this.entityLightStates.put(key, cached);
-                }
-                this.entityLightStatesByDescriptor.put(draw.shadowDescriptor(), cached);
+                boolean particle = draw.particle();
+                int[] descriptor = draw.shadowDescriptor();
+                cached = this.built(entityLightKey(particle, descriptor), () -> this.buildEntityLightState(particle, descriptor));
+                this.entityLightStatesByDescriptor.put(descriptor, cached);
             }
             if (cached != currentState) {
                 currentState = cached;
@@ -1454,13 +1637,8 @@ public final class MetalShaders {
     }
 
     private void renderShadowHistory(final long frame) {
-        this.ensureCompositeLibrary();
         if (this.shadowHistoryState == 0L) {
-            int[] desc = {0, 0, 1, SHADOW_HISTORY_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
-            this.shadowHistoryState = MetalNative.pipelineCreate(
-                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "shadow_history_fragment",
-                desc, "Honeycrisp surface shadow history"
-            );
+            this.shadowHistoryState = this.fullscreenState("shadow_history_fragment", SHADOW_HISTORY_FORMAT, SHADOW_HISTORY_STATE);
         }
         MetalNative.profileLabel("shadow history");
         long enc = MetalNative.passBeginOverwrite(frame, new long[]{this.shadowHistoryTextures[this.shadowHistoryIndex]},
@@ -1483,7 +1661,6 @@ public final class MetalShaders {
      * at 1900 rows): fog is soft, and the march is the most expensive thing on screen per pixel.
      */
     private void volumetric(final long frame) {
-        this.ensureCompositeLibrary();
         int divisor = Math.max(2, Math.round(this.mainHeight / (float)this.quality.fogRows));
         int width = Math.max(1, (this.mainWidth + divisor - 1) / divisor);
         int height = Math.max(1, (this.mainHeight + divisor - 1) / divisor);
@@ -1505,11 +1682,7 @@ public final class MetalShaders {
             this.sampleFrame.set(ValueLayout.JAVA_FLOAT, 452, 0.0F);
         }
         if (this.volumetricState == 0L) {
-            int[] desc = {0, 0, 2, VOLUMETRIC_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0,
-                EXTINCTION_FORMAT, 1, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
-            this.volumetricState = MetalNative.pipelineCreate(
-                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "volumetric_fragment", desc, "Honeycrisp volumetric"
-            );
+            this.volumetricState = this.built(VOLUMETRIC_STATE, this::buildVolumetricState);
         }
         if (this.airNoiseTexture == 0L) {
             this.renderAirNoiseTable(frame);
@@ -1539,18 +1712,13 @@ public final class MetalShaders {
     private void renderAirNoiseTable(final long frame) {
         this.airNoiseTexture = MetalNative.textureCreate(this.device.context(), EXTINCTION_FORMAT, AIR_NOISE_TABLE, AIR_NOISE_TABLE, 1, 1, 4 | 8);
         MetalNative.setLabel(this.airNoiseTexture, "Honeycrisp fog noise");
-        int[] desc = {0, 0, 1, EXTINCTION_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
-        long state = MetalNative.pipelineCreate(
-            this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "air_noise_table_fragment", desc,
-            "Honeycrisp fog noise"
-        );
+        long state = this.fullscreenState("air_noise_table_fragment", EXTINCTION_FORMAT, FOG_NOISE_STATE);
         MetalNative.profileLabel("fog noise table");
         long enc = MetalNative.passBeginOverwrite(frame, new long[]{this.airNoiseTexture}, AIR_NOISE_TABLE, AIR_NOISE_TABLE);
         MetalNative.passSetPipeline(enc, state, 0L, false, false, 0.0F, 0.0F);
         MetalNative.passSetBytes(enc, 0, this.sampleFrame, FRAME_BYTES, BOTH);
         MetalNative.passDraw(enc, MetalConst.PRIM_TRIANGLES, 0, 3, 1, 0);
         MetalNative.passEnd(enc);
-        this.device.encoder().queueForDestroy(() -> MetalNative.release(state));
     }
 
     private void ensureAmbientOcclusion() {
@@ -1589,16 +1757,9 @@ public final class MetalShaders {
      * glass still gets contact shadows.
      */
     private void ambientOcclusion(final long frame) {
-        this.ensureCompositeLibrary();
         if (this.aoState == 0L) {
-            int[] desc = {0, 0, 1, AO_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
-            this.aoState = MetalNative.pipelineCreate(
-                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "ao_fragment", desc, "Honeycrisp ambient occlusion"
-            );
-            this.aoFilterState = MetalNative.pipelineCreate(
-                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "ao_filter_fragment", desc,
-                "Honeycrisp ambient occlusion filter"
-            );
+            this.aoState = this.fullscreenState("ao_fragment", AO_FORMAT, AO_STATE);
+            this.aoFilterState = this.fullscreenState("ao_filter_fragment", AO_FORMAT, AO_FILTER_STATE);
         }
         long depth = this.opaqueSnapshotThisFrame ? this.opaqueDepth : this.mainDepth;
         MetalNative.profileLabel("ao");
@@ -1623,12 +1784,6 @@ public final class MetalShaders {
         this.aoHistoryValid = true;
     }
 
-    private void ensureCompositeLibrary() {
-        if (this.compositeLibrary == 0L) {
-            this.compositeLibrary = MetalNative.libraryCreate(this.device.context(), this.compositeSource);
-        }
-    }
-
     float renderScale() {
         return this.quality.renderScale;
     }
@@ -1638,12 +1793,8 @@ public final class MetalShaders {
      * target, with a little sharpening (upscale_fragment); the hand was drawn with the world, the HUD comes after.
      */
     void upscale(final long frame, final long source, final long target, final int width, final int height) {
-        this.ensureCompositeLibrary();
         if (this.upscaleState == 0L) {
-            int[] desc = {0, 0, 1, COLOR_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
-            this.upscaleState = MetalNative.pipelineCreate(
-                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "upscale_fragment", desc, "Honeycrisp upscale"
-            );
+            this.upscaleState = this.fullscreenState("upscale_fragment", COLOR_FORMAT, UPSCALE_STATE);
         }
         MetalNative.profileLabel("upscale");
         long enc = MetalNative.passBeginOverwrite(frame, new long[]{target}, width, height);
@@ -1655,12 +1806,8 @@ public final class MetalShaders {
     }
 
     private void composite(final long frame) {
-        this.ensureCompositeLibrary();
         if (this.compositeState == 0L) {
-            int[] desc = {0, 0, 1, COLOR_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
-            this.compositeState = MetalNative.pipelineCreate(
-                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "composite_fragment", desc, "Honeycrisp composite"
-            );
+            this.compositeState = this.fullscreenState("composite_fragment", COLOR_FORMAT, COMPOSITE_STATE);
         }
         MetalNative.profileLabel("composite");
         long enc = MetalNative.passBegin(frame, new long[]{this.mainColor}, new int[]{0}, 0, new float[4], 0L, 0, false, 0.0, this.mainWidth, this.mainHeight);
@@ -1688,7 +1835,7 @@ public final class MetalShaders {
             return;
         }
         this.shadowCullCamera = Minecraft.getInstance().gameRenderer.mainCamera().position();
-        this.ensureShadowLibrary(idx);
+        this.ensureShadowDepthState();
         MetalNative.profileLabel("shadow map");
         long enc = MetalNative.passBegin(frame, new long[0], new int[0], 0, new float[4], this.shadowTexture(), 0, true, 1.0, this.shadowSize, this.shadowSize);
         // Casters nearer the light than the map's near plane (hills toward a low sun) are kept at depth 0 rather than
@@ -1737,10 +1884,8 @@ public final class MetalShaders {
             if (!bound) {
                 bound = true;
                 if (this.shadowTranslucentState == 0L) {
-                    this.shadowTranslucentState = MetalNative.pipelineCreate(
-                        this.device.context(), this.shadowLibrary, "shadow_vertex", this.shadowLibrary, "shadow_fragment_translucent",
-                        translucentShadowDescriptor(draw.shadowDescriptor()), "Honeycrisp shadow (translucent)"
-                    );
+                    int[] descriptor = draw.shadowDescriptor();
+                    this.shadowTranslucentState = this.built(SHADOW_TRANSLUCENT_STATE, () -> this.buildTranslucentShadowState(descriptor));
                 }
                 MetalNative.passSetPipeline(enc, this.shadowTranslucentState, 0L, false, false, 0.0F, 0.0F);
             }
@@ -1754,10 +1899,7 @@ public final class MetalShaders {
         // shaded, sunlight through the gaps forms shafts, and the receiver can give their shadow a wide soft edge.
         if (clouds && !this.cloudDraws.isEmpty()) {
             if (this.cloudShadowState == 0L) {
-                this.cloudShadowState = MetalNative.pipelineCreate(
-                    this.device.context(), this.entityLibrary, "cloud_shadow_vertex", this.entityLibrary, "cloud_shadow_fragment",
-                    translucentShadowDescriptor(new int[]{0, 0, 0, DEPTH_FORMAT, MetalConst.PRIM_TRIANGLES}), "Honeycrisp cloud shadow"
-                );
+                this.cloudShadowState = this.built(CLOUD_SHADOW_STATE, this::buildCloudShadowState);
             }
             MetalNative.passSetPipeline(enc, this.cloudShadowState, 0L, false, false, 0.0F, 0.0F);
             for (CloudDraw draw : this.cloudDraws) {
@@ -1789,11 +1931,7 @@ public final class MetalShaders {
         this.cloudBase = Double.NaN;
         if (!this.cloudDraws.isEmpty()) {
             if (this.cloudMapState == 0L) {
-                int[] desc = {0, 0, 1, CLOUD_MAP_FORMAT, 15, 1, BlendFactor.DST_COLOR.ordinal(), BlendFactor.ZERO.ordinal(), BlendOp.ADD.ordinal(),
-                    BlendFactor.ONE.ordinal(), BlendFactor.ZERO.ordinal(), BlendOp.ADD.ordinal(), -1, MetalConst.PRIM_TRIANGLES};
-                this.cloudMapState = MetalNative.pipelineCreate(
-                    this.device.context(), this.entityLibrary, "cloud_map_vertex", this.entityLibrary, "cloud_map_fragment", desc, "Honeycrisp cloud shadow map"
-                );
+                this.cloudMapState = this.built(CLOUD_MAP_STATE, this::buildCloudMapState);
             }
             MetalNative.passSetPipeline(enc, this.cloudMapState, 0L, false, false, 0.0F, 0.0F);
             MetalNative.passSetBytes(enc, FRAME_INDEX, this.renderFrame, FRAME_BYTES, MetalConst.STAGE_VERTEX);
@@ -2032,10 +2170,8 @@ public final class MetalShaders {
         boolean cutout = draw.kind() == KIND_CUTOUT;
         long state = cutout ? this.shadowCutoutState : this.shadowSolidState;
         if (state == 0L) {
-            state = MetalNative.pipelineCreate(
-                this.device.context(), this.shadowLibrary, "shadow_vertex", cutout ? this.shadowLibrary : 0L, cutout ? "shadow_fragment_cutout" : "",
-                draw.shadowDescriptor(), cutout ? "Honeycrisp shadow (cutout)" : "Honeycrisp shadow"
-            );
+            int[] descriptor = draw.shadowDescriptor();
+            state = this.built(cutout ? SHADOW_CUTOUT_STATE : SHADOW_SOLID_STATE, () -> this.buildTerrainShadowState(cutout, descriptor));
             if (cutout) {
                 this.shadowCutoutState = state;
             } else {
@@ -2048,15 +2184,7 @@ public final class MetalShaders {
     private long entityShadowState(final int[] descriptor) {
         Long state = this.entityShadowStatesByDescriptor.get(descriptor);
         if (state == null) {
-            String key = Arrays.toString(descriptor);
-            state = this.entityShadowStates.get(key);
-            if (state == null) {
-                state = MetalNative.pipelineCreate(
-                    this.device.context(), this.entityLibrary, "entity_shadow_vertex", this.entityLibrary, "entity_shadow_fragment", descriptor,
-                    "Honeycrisp entity shadow"
-                );
-                this.entityShadowStates.put(key, state);
-            }
+            state = this.built(entityShadowKey(descriptor), () -> this.buildEntityShadowState(descriptor));
             this.entityShadowStatesByDescriptor.put(descriptor, state);
         }
         return state;
@@ -2512,17 +2640,15 @@ public final class MetalShaders {
     void destroy() {
         castersWanted = false;
         casterView = null;
-        List<Long> handles = new ArrayList<>(List.of(this.skyLibrary, this.skyState, this.farShadowColorTextures[0], this.farShadowTextures[0], this.farShadowColorTextures[1],
-            this.farShadowTextures[1], this.extinctionTextures[0], this.extinctionTextures[1], this.shadowTexture, this.shadowSampler, this.shadowLibrary, this.shadowSolidState,
-            this.shadowCutoutState, this.entityLibrary, this.compositeLibrary, this.compositeState, this.upscaleState, this.opaqueColor, this.opaqueDepth,
-            this.volumetricState, this.volumetricTextures[0], this.volumetricTextures[1], this.shadowColorTexture, this.shadowTranslucentState,
-            this.shadowHistoryState, this.shadowHistoryTextures[0], this.shadowHistoryTextures[1], this.cloudShadowState, this.foliageBuffer,
-            this.cloudMapTexture, this.cloudMapState, this.frameConstantsTexture, this.frameConstantsState, this.lightningShadowTexture,
-            this.handSpriteBuffer, this.airNoiseTexture,
-
-            this.aoState, this.aoFilterState, this.aoRawTexture, this.aoTextures[0], this.aoTextures[1]));
-        handles.addAll(this.entityShadowStates.values());
-        handles.addAll(this.entityLightStates.values());
+        // Libraries and pipeline states belong to the registry (built); the fields only cache them.
+        for (java.util.concurrent.CompletableFuture<Long> build : this.built.values()) {
+            Prebuild.releaseWhenDone(build, 0L);
+        }
+        List<Long> handles = new ArrayList<>(List.of(this.farShadowColorTextures[0], this.farShadowTextures[0], this.farShadowColorTextures[1],
+            this.farShadowTextures[1], this.extinctionTextures[0], this.extinctionTextures[1], this.shadowTexture, this.shadowSampler, this.opaqueColor, this.opaqueDepth,
+            this.volumetricTextures[0], this.volumetricTextures[1], this.shadowColorTexture, this.shadowHistoryTextures[0], this.shadowHistoryTextures[1],
+            this.foliageBuffer, this.cloudMapTexture, this.frameConstantsTexture, this.lightningShadowTexture, this.handSpriteBuffer, this.airNoiseTexture,
+            this.aoRawTexture, this.aoTextures[0], this.aoTextures[1]));
         for (long handle : handles) {
             if (handle != 0L) {
                 MetalNative.release(handle);

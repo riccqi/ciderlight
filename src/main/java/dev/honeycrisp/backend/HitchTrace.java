@@ -111,6 +111,14 @@ public final class HitchTrace {
         }
     }
 
+    /** The render thread waited for a library or pipeline state still being built in the background (Prebuild). */
+    static void waitedForBuild(final long ns, final String what) {
+        add(PIPELINE, ns);
+        if (active) {
+            note(String.format(Locale.ROOT, "waited for '%s' %.1fms", what, ns / 1e6));
+        }
+    }
+
     static void texture(final long ns, final int width, final int height) {
         add(TEXTURE, ns);
         if (active && (long)width * height >= 512L * 512L) {
