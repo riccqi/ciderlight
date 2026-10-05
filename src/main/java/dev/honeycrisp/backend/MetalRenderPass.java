@@ -310,8 +310,13 @@ public class MetalRenderPass implements RenderPassBackend {
             this.frameSlotsTaken = false;
             this.device.shaders().bindFrame(this.enc);
         }
-        if (this.main && this.pipeline != null && this.pipeline.cloudUniforms() != null) {
-            this.captureClouds(ib, indexCount, firstIndex, vertexOffset);
+        if (this.pipeline != null && this.pipeline.cloudUniforms() != null) {
+            if (this.main) {
+                this.captureClouds(ib, indexCount, firstIndex, vertexOffset);
+            }
+            // The cloud shader reads where the sun is from the frame slot (MetalRenderPipeline.sunlitClouds).
+            this.frameSlotsTaken = true;
+            this.device.shaders().bindCloudLight(this.enc);
         }
         if (this.pipeline != null && this.pipeline.isFan()) {
             this.drawFan(ib, (long)firstIndex * this.indexSize, indexCount, instanceCount, vertexOffset, firstInstance);

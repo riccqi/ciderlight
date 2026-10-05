@@ -34,7 +34,13 @@ render pass.
 
 Enabled by default. Written for this backend rather than ported from an OptiFine/Iris pack:
 
-- **Lighting**: rebuilt from the lightmap coordinates in the style of Complementary. Torches and other block
+- **Lighting**: rebuilt from the lightmap coordinates in the style of Complementary. In the Overworld vanilla's fixed
+  per-face shading (east and west faces at 60%) is divided back out of the terrain colour and replaced by light that
+  knows where the sun is: a warm direct sun (strongly orange when low) on top of blue light from the open sky, the
+  sun about two and a half times as bright as the sky light in shade, so sunlit faces stand clearly apart from shaded
+  ones. The sky light keeps a gentle up-to-down falloff, sunlit ground throws a little warm light back onto walls,
+  crossed plants are lit by the sun from any side, and lit colours above white roll off instead of clipping. Sprites
+  vanilla always shades as if facing up (torches, lanterns, vines, ladders) are left alone. Torches and other block
   light have a steep, warm falloff and fade under open daylight. Night sky light is darker than vanilla, with a
   small cool ambient floor so caves never go fully black.
   Flames (fire, soul fire, campfires, and the flame in torches and lanterns) are drawn at full brightness like the
@@ -46,8 +52,8 @@ Enabled by default. Written for this backend rather than ported from an OptiFine
   from the moon at night, into a 4096² depth map (one frame of latency), sampled with hardware PCF. Sub-texel raster jitter and
   reprojected visibility history smooth slowly moving shadow edges. History rejects depth mismatches and resets
   after teleports, world changes, resizing, or abrupt light changes. Moonlight
-  is dim and blue, and scales with the moon phase. Foliage (leaves, grass, vines) lets about half the light
-  through and is lit evenly from both sides; stained glass, ice and water tint the light
+  is dim and blue, and scales with the moon phase. Foliage (leaves, grass, vines) casts full shadows, so every tuft and canopy
+  shows on the ground, and is lit evenly from both sides; stained glass, ice and water tint the light
   that passes through them via a colour map rendered alongside the depth map. Coloured glass
   filters the direct RGB light on terrain/entities and in air/underwater rays; texture transparency
   no longer washes saturated dyes into nearly white light, and vanilla face shading is excluded from
@@ -55,8 +61,8 @@ Enabled by default. Written for this backend rather than ported from an OptiFine
   soft tint rather than a flat patch of the dye colour. Clear glass and water retain gentler filtering. The colour map's alpha channel
   records the nearest translucent depth, so air in front of glass is not tinted. Stacked translucent layers still share one
   accumulated transmission value; resolving air between individual layers would require a deep shadow map.
-- **Sky**: a directional Metal sky gradient with deep blue daylight, a pale horizon, warm sunrise/sunset
-  toward the sun, a softer violet opposite horizon, dim blue nights and muted overcast weather. This is
+- **Sky**: a directional Metal sky gradient: a hazy pale blue by day, near white over a broad band above the horizon,
+  washing towards lavender and pink while the sun is low, warm sunrise/sunset toward the sun, a softer violet opposite horizon, dim blue nights and muted overcast weather. This is
   an artistic scattering approximation, not an HDR atmospheric transport solver. The actual solar elevation
   drives the palette continuously through the sun/moon shadow handoff. The sky is drawn before vanilla
   sun/moon/stars, and clouds retain their existing geometry. Sky colour also drives fog ambient light,
@@ -69,7 +75,9 @@ Enabled by default. Written for this backend rather than ported from an OptiFine
   do not disappear above the low mist. A forward-plus-broad scattering phase makes morning/evening beams
   visible from oblique angles, with subdued fog ambient fill to preserve their contrast. The air around
   the camera is four times as dense, fading over 40 blocks, so nearby scenery sits in mist without the distance whiting out
-  (`honeycrisp.fogNear`, `honeycrisp.fogNearRange`). The range follows the render distance, with a
+  (`honeycrisp.fogNear`, `honeycrisp.fogNearRange`). Further out the air takes on the colour of the sky behind it (aerial perspective), so
+  distant hills fade into the pale horizon in layers rather than into a dark blue veil; rays into the open sky scatter
+  the sky's own colour, so the fog does not grey it. The range follows the render distance, with a
   separate distant shadow cascade covering all of it (2048², or 4096² beyond 320 blocks), refreshed every four frames
   and blended into the near map.
   Both shadow cascades carry glass transmission, so distant fog retains the tint beyond the near map.
@@ -104,7 +112,11 @@ Enabled by default. Written for this backend rather than ported from an OptiFine
   atlas, rebuilt whenever block models reload (resource packs). The vertex shader identifies its quad's sprite from
   the middle of the quad's UVs, reading the diagonal vertex straight from the chunk vertex buffer, so grass-block
   side overlays and other tinted blocks never move. Motion tuned after Complementary Shaders; the code is original.
-- **Clouds**: drawn opaque out to about two thirds of their range, so stars no longer show through them.
+- **Clouds**: drawn opaque out to about two thirds of their range, so stars no longer show through them, and shaded
+  as volumes: white tops, slightly cooler walls and blue-grey undersides. They take less of the haze than the ground.
+  Each face is also lit by where the sun is: walls facing it are a little brighter than those facing away. At golden
+  hour the whole cloud takes on the low sun's colour, the faces turned to it most, while the far side stays cooler,
+  and clouds between the camera and a low sun glow warm with forward-scattered light.
 - **Water surface**: seen from above, water is shaded completely in the translucent terrain shader, which blends
   through Apple-GPU framebuffer fetch instead of fixed-function blending. Layered, world-anchored value-noise waves
   (six octaves turned by the golden angle, smaller and faster with each octave) give the normal; octaves fade before
@@ -141,12 +153,15 @@ not run on the OpenGL or Vulkan backends and are not an Iris/OptiFine pack.
 
 **Quality.** On phone-class GPUs (the A-series chip in the MacBook Neo) the shaders run at low quality: a 2048² near
 shadow map and a 1024² distant one (2048² beyond 320 blocks), fog worked out at about 320 rows and ambient occlusion at
-about 400, and 16-step fog, underwater and reflection marches with 12 screen-space shaft samples. Every other GPU gets
-high quality, as described above.
+about 400, and 16-step fog, underwater and reflection marches with 12 screen-space shaft samples. The world (and the
+held item) is also drawn at two thirds of the window's resolution in each direction, about 45% of the pixels, and
+stretched over the window with a little sharpening; the HUD and menus are still drawn at full resolution.
+`honeycrisp.renderScale=<0.25–1>` sets that fraction at either quality. Every other GPU gets high quality, as described
+above.
 `honeycrisp.quality=low` or `=high` overrides the choice (dev client: `-Pquality=low`); the log names the one in use.
 `honeycrisp.waterReflections=false` leaves water mirroring only the sky, at any quality.
 
-Options (JVM `-D` flags): `honeycrisp.quality=low|high`, `honeycrisp.shaders=false`, `honeycrisp.shadowSize=2048`,
+Options (JVM `-D` flags): `honeycrisp.quality=low|high`, `honeycrisp.renderScale=0.67`, `honeycrisp.shaders=false`, `honeycrisp.shadowSize=2048`,
 `honeycrisp.shadowDistance=96`, `honeycrisp.fogDistance=256` (caps how far fog and its light shafts reach, 32–1024 blocks;
 by default they follow the render distance),
 `honeycrisp.fogNear=3` (extra mist density at the camera, 0 for none) and `honeycrisp.fogNearRange=40` (blocks it fades over), `honeycrisp.shadowHistory=false` (disable temporal shadow filtering for comparison),
@@ -213,7 +228,7 @@ python3 tests/check_shaders.py  # compile all shader variants and run GPU regres
 ## Installing
 
 1. Install Fabric Loader for Minecraft 26.3 (https://fabricmc.net/use/installer/).
-2. Copy `build/libs/honeycrisp-0.1.0.jar` into `~/Library/Application Support/minecraft/mods/`.
+2. Copy `build/libs/honeycrisp-0.1.1.jar` into `~/Library/Application Support/minecraft/mods/`.
 3. Launch the Fabric profile. Honeycrisp is client-side only, so it works on any server.
 4. Optional: add `--enable-native-access=ALL-UNNAMED` to the profile's JVM arguments to silence
    Java's native-access warning.

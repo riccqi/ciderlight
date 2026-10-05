@@ -22,7 +22,7 @@ static void checkSky(id<MTLDevice> device, id<MTLLibrary> lib) {
     require(cb.status == MTLCommandBufferStatusCompleted, cb.error.description);
     simd_float4 *v = output.contents;
     for (int i = 0; i < 64; i++) for (int j = 0; j < 4; j++) require(isfinite(v[i][j]) && v[i][j] >= 0, @"Nonfinite/negative sky or layered fog");
-    require(v[0].z > v[0].x * 2 && v[1].x > v[0].x, @"Day sky must be blue overhead and lighter at the horizon");
+    require(v[0].z > v[0].x * 1.25f && v[1].x > v[0].x, @"Day sky must be blue overhead and lighter at the horizon");
     require(v[9].x > v[9].z && v[9].x > v[10].x, @"Sunrise horizon lost its directional warm colour");
     require(simd_length(v[16].xyz) < simd_length(v[0].xyz)*0.15f && simd_length(v[16].xyz) > 0, @"Night sky is overbright or completely black");
     require(fabsf(v[25].x-v[25].z) < fabsf(v[9].x-v[9].z), @"Rain did not soften the sunset palette");

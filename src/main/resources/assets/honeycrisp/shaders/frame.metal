@@ -23,13 +23,40 @@ struct FrameData {
     int4 rainOrigin;      // xy: world x, z of the rain mask's corner, z: whether it rains at the camera (used off the mask)
     uint4 rainMask[32];   // RAIN_GRID x RAIN_GRID bits, one per 4x4-block column: 1 where the biome there gets rain
     float4 heldLights[8]; // light sources in players' hands, nearest first: xyz relative to the camera, w block-light level (0-1); the list ends at the first 0
-    float4 reserved[24];  // unused; keeps the offsets of the fields below
+    float4 surfaceSun;     // rgb direct sun (or moon) light on surfaces, before shadows and the light's strength
+    float4 surfaceAmbient; // rgb sky light on surfaces in shade (blue by day), before sky-light falloff
+    float4 reserved[22];  // unused; keeps the offsets of the fields below
     float4 waterParams;   // x underwater, y local surface relative to camera, z surface sky light, w extinction scale
     float4x4 farShadowMat;
     float4 farCamToAnchor; // xyz camera minus far-map anchor, w valid
     float4 airParams;     // x fog range, y mist base height, z atmosphere enabled, w temporal weight
     float4 solarDir;      // actual sun (never swapped for moon), w atmosphere enabled
 };
+
+// Vanilla's fixed brightness per face direction (CardinalLighting.DEFAULT), multiplied into terrain vertex colours:
+// 1 facing up, 0.8 north/south, 0.6 east/west, 0.5 down. 1 for faces that are not axis-aligned (vanilla shades
+// those crossed plants as if facing up).
+static float vanilla_face_shade(float3 n) {
+    float3 a = abs(n);
+    if (a.y > 0.98) return n.y > 0.0 ? 1.0 : 0.5;
+    if (a.z > 0.98) return 0.8;
+    if (a.x > 0.98) return 0.6;
+    return 1.0;
+}
+
+// How much of the open sky's light reaches a face: all of it facing up, about three quarters on walls, half facing
+// down. Applied to sky, block and cave light, not to the sun, which has its own direction.
+static float sky_face_shade(float3 n) {
+    return (0.775 + 0.225 * n.y) * (1.0 + 0.04 * abs(n.z) - 0.04 * abs(n.x));
+}
+
+// Lit colours above 1 (sunlit snow, sand, pale stone) would clip flat in the 8-bit scene: below KNEE they are kept,
+// above it they approach 1 smoothly, with the same slope at the knee.
+static float3 highlight_rolloff(float3 c) {
+    const float knee = 0.68;
+    float3 over = max(c - knee, 0.0);
+    return min(c, knee) + (1.0 - knee) * (1.0 - exp(-over / (1.0 - knee)));
+}
 
 // Alpha 1 belongs to vanilla geometry with unknown light. Leave a gap that survives RGBA8 quantization.
 static float encode_entity_light(float blockLight) {

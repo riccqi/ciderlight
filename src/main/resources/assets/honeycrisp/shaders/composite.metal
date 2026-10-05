@@ -48,10 +48,10 @@ static float3 grade(float3 c) {
     // The contrast curve only applies to mid and bright tones; dark tones are left alone so nights stay readable
     // (Complementary lifts its tonemap off dark colours the same way).
     float l0 = dot(x, float3(0.2126, 0.7152, 0.0722));
-    x = mix(x, x * x * (3.0 - 2.0 * x) * 0.35 + x * 0.65, smoothstep(0.05, 0.3, l0));
+    x = mix(x, x * x * (3.0 - 2.0 * x) * 0.2 + x * 0.8, smoothstep(0.05, 0.3, l0));
     float l = dot(x, float3(0.2126, 0.7152, 0.0722));
-    x = mix(float3(l), x, 1.12);
-    x *= float3(1.02, 1.0, 0.97);
+    x = mix(float3(l), x, 1.0);
+    x *= float3(1.01, 1.0, 0.98);
     return saturate(x);
 }
 
@@ -149,7 +149,7 @@ template <typename Noise>
 static AirVolume march_air(constant FrameData &frame, depth2d<float> nearMap, depth2d<float> farMap,
                             sampler compare, texture2d<float> transmission, texture2d<float> farTransmission,
                             texture2d<float> cloudMap, depth2d<float> lightningMap, float3 origin, float3 V, float rayEnd,
-                            float dither, Noise noise) {
+                            float dither, Noise noise, bool skyRay = false) {
     AirVolume volume = {float3(0.0), 1.0, 0.0};
     AirMedium medium = air_medium(frame);
     // No medium (deep caves, dimensions without an atmosphere): nothing to march.
@@ -157,6 +157,9 @@ static AirVolume march_air(constant FrameData &frame, depth2d<float> nearMap, de
     bool moon = frame.lightParams.z > 0.5;
     // Retain sky-coloured fill, but leave enough contrast for shadowed gaps to separate the shafts.
     float3 ambient = atmosphere_ambient(frame) * 0.35;
+    // Far away the air takes on the colour of the sky behind it (aerial perspective): distant hills fade into the
+    // pale horizon rather than into a dark blue veil. Nearby, the dimmer fill keeps shafts and shade contrasty.
+    float3 skyBehind = atmosphere_sky(frame, V) * (skyRay ? 0.97 : 0.85);
     // The low sun lights the mist most strongly (golden hour), and keeps doing so until it is at the horizon.
     float3 direct = frame.sunColor.rgb * frame.sunDir.w * (moon ? 0.5 : 1.65 * (1.0 + 0.1 * frame.airNear.z))
                   * smoothstep(0.0, 0.04, frame.sunDir.y) * air_phase(dot(V, frame.sunDir.xyz));
@@ -181,7 +184,9 @@ static AirVolume march_air(constant FrameData &frame, depth2d<float> nearMap, de
         // distance whiting out. It depends on distance along the ray only, so walking does not sway it.
         // (Half of it around sunrise and sunset: with the sun low and ahead, thick mist at the camera glares.)
         density *= 1.0 + frame.airNear.x * (1.0 - 0.5 * frame.airNear.z) * exp(-distance / max(frame.airNear.y, 1.0));
-        float3 incident = ambient;
+        // A ray into the open sky scatters the sky's own colour all along it: the sky already is the light the air
+        // scatters, and the dim fill would lay a grey veil over its blue.
+        float3 incident = skyRay ? skyBehind : mix(ambient, skyBehind, smoothstep(48.0, 200.0, distance));
         // A step that scatters next to nothing (thin air high up) is not worth the shadow lookups.
         if (lit && density * width > 1e-4) {
             incident += direct * air_visibility(frame, nearMap, farMap, compare, transmission, farTransmission, cloudMap, p,
@@ -376,9 +381,8 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
             // Vanilla already applies its own directional entity lighting, so only soften by facing.
             float3 direct = vis * saturate(ndotl * 3.0);
             directShare = dot(direct, float3(0.333)) * lightStrength;
-            float darkness = frame.sunColor.w;
-            float3 shadowTint = atmosphere_shadow_tint(frame) * (1.0 - darkness);
-            shade = mix(float3(1.0), filtered_surface_light(shadowTint, frame.sunColor.rgb, direct), lightStrength);
+            // The same sky and sun light as terrain (terrain.metal).
+            shade = mix(float3(1.0), frame.surfaceAmbient.rgb, lightStrength) + frame.surfaceSun.rgb * direct * lightStrength;
         }
         // Where torch light dominates, the sun/moon shading and night darkening give way to a warm torch tint, so a
         // mob next to a torch is lit like the ground around it.
@@ -391,7 +395,7 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
         }
         float3 sunShade = shade * mix(1.0, nightSky, 0.6);
         float3 torchShade = float3(1.05, 0.9, 0.7);
-        color *= mix(sunShade, max(sunShade, torchShade), saturate(torch * 1.5));
+        color = highlight_rolloff(color * mix(sunShade, max(sunShade, torchShade), saturate(torch * 1.5)));
         // Mobs and items have no sky-light value here, so a lightning bolt brightens all of them around it.
         if (frame.lightning.w > 0.0) {
             float3 facing = dot(normal, ray.origin - worldPos) < 0.0 ? -normal : normal;
@@ -428,7 +432,18 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
               + volumetric_scattering(volumetric, in.uv, min(waterDistance / 48.0, 1.0), true);
     } else {
         float4 fog = air_sample(volumetric, extinctionHistory, in.uv, min(dist / air_range(frame), 1.0));
-        color = color * saturate(fog.a) + fog.rgb;
+        // Clouds take less of the haze than the ground does: most of the air is below them, and they should stand
+        // out white against the sky rather than melt into it.
+        bool cloud = !isSky && frame.cameraPos.w > -1.0e8 && worldPos.y > frame.cameraPos.w - 0.5;
+        color = mix(color * saturate(fog.a) + fog.rgb, color, cloud ? 0.6 : 0.0);
+        // Aerial perspective: far terrain fades into the colour of the sky behind it, little within a hundred blocks
+        // and most of the way at the edge of the render distance, so hills stack up in paler layers. It follows the
+        // render distance, and stays out of caves.
+        if (!isSky && !cloud && frame.solarDir.w > 0.5) {
+            float reach = dist * min(1.0, 192.0 / far);
+            float aerial = (1.0 - exp(-reach * reach * reach * 1.0e-6)) * 0.3 * smoothstep(0.1, 0.6, frame.fogParams.x);
+            color = mix(color, atmosphere_sky(frame, V) * 0.95, aerial);
+        }
 
         // Screen-space shafts: march towards the sun and count how much open sky there is. Anything else blocks it,
         // clouds and distant terrain included, so light streams through the gaps between clouds. The volumetric
@@ -457,7 +472,7 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
             float shafts = sky / total * falloff * falloff;
             // Additive, so the rays still glow over the already bright sky around the sun.
             float3 rayCol = moon ? float3(0.55, 0.65, 0.95) : frame.sunColor.rgb * float3(1.0, 0.86, 0.64);
-            color += rayCol * shafts * 0.14 * (1.0 + 0.2 * frame.airNear.z) * shaftStrength * smoothstep(0.1, 0.6, frame.fogParams.x);
+            color += rayCol * shafts * 0.10 * (1.0 + 0.2 * frame.airNear.z) * shaftStrength * smoothstep(0.1, 0.6, frame.fogParams.x);
         }
     }
 
@@ -470,7 +485,7 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
 
     // Soft vignette.
     float2 v = in.uv - 0.5;
-    color *= 1.0 - dot(v, v) * 0.35;
+    color *= 1.0 - dot(v, v) * 0.18;
     return float4(color, 1.0);
 }
 
@@ -515,7 +530,7 @@ fragment VolumeOutput volumetric_fragment(VOut in [[stage_in]],
     if (underwater) lit = march_water(frame, shadowMap, shadowSampler, shadowColor, cloudShadow, ray.origin, V, dist, dither);
     else {
         fog = march_air(frame, shadowMap, farMap, shadowSampler, shadowColor, farTransmission, cloudShadow, lightningShadow, ray.origin, V, dist, dither,
-                        AirTableNoise{airNoise});
+                        AirTableNoise{airNoise}, isSky || (frame.cameraPos.w > -1.0e8 && worldPos.y > frame.cameraPos.w - 0.5));
         lit = fog.scattering;
     }
 
@@ -646,4 +661,25 @@ fragment float4 ao_filter_fragment(VOut in [[stage_in]],
 // rgb the tint of shadowed sky light (three evaluations of the sky).
 fragment float4 frame_constants_fragment(VOut in [[stage_in]], constant FrameData &frame [[buffer(0)]]) {
     return float4(atmosphere_shadow_tint(frame), 1.0);
+}
+
+// World render scale (RenderScale): the world, drawn at a fraction of the window's resolution, is stretched over the
+// full window before the HUD is drawn on it. Bilinear, then contrast-adaptive sharpening (after AMD's FidelityFX CAS,
+// written from its published description) to win back some of the crispness the stretch softens: each pixel is pushed
+// away from its four neighbours, less so where they already differ a lot, so edges do not ring.
+constant float UPSCALE_SHARPNESS = 0.6; // 0: plain bilinear, 1: the strongest CAS setting
+
+fragment float4 upscale_fragment(VOut in [[stage_in]], texture2d<float> source [[texture(0)]]) {
+    constexpr sampler lin(filter::linear, address::clamp_to_edge);
+    float2 texel = 1.0 / float2(source.get_width(), source.get_height());
+    float3 c = source.sample(lin, in.uv).rgb;
+    float3 n = source.sample(lin, in.uv + float2(0.0, -texel.y)).rgb;
+    float3 s = source.sample(lin, in.uv + float2(0.0, texel.y)).rgb;
+    float3 w = source.sample(lin, in.uv + float2(-texel.x, 0.0)).rgb;
+    float3 e = source.sample(lin, in.uv + float2(texel.x, 0.0)).rgb;
+    float3 lo = min(c, min(min(n, s), min(w, e)));
+    float3 hi = max(c, max(max(n, s), max(w, e)));
+    float3 amount = sqrt(saturate(min(lo, 1.0 - hi) / max(hi, 1e-4)));
+    float3 weight = -amount / mix(8.0, 5.0, UPSCALE_SHARPNESS);
+    return float4(saturate((c + (n + s + w + e) * weight) / (1.0 + 4.0 * weight)), 1.0);
 }

@@ -97,9 +97,8 @@ fragment float4 particle_fragment(ParticleOut in [[stage_in]],
         float3 lightDir = frame.sunDir.xyz;
         float3 vis = shadow_visibility(frame, shadowMap, shadowSampler, shadowColor, cloudShadow, in.worldPos, lightDir, 1.0);
         direct = 0.85 * vis;
-        float darkness = frame.sunColor.w;
-        float3 shadowTint = frameConstants.read(uint2(0, 0)).rgb * (1.0 - darkness);
-        shade = mix(float3(1.0), filtered_surface_light(shadowTint, frame.sunColor.rgb, direct), lightStrength);
+        // The same sky and sun light as terrain (terrain.metal).
+        shade = mix(float3(1.0), frame.surfaceAmbient.rgb, lightStrength) + frame.surfaceSun.rgb * direct * lightStrength;
     }
     float3 sky = skyTerm * frame.lightParams.y * shade;
     float3 blockTerm = float3(1.0, 0.66, 0.30) * torch_light(blockL);
@@ -112,5 +111,5 @@ fragment float4 particle_fragment(ParticleOut in [[stage_in]],
         light += (lightning_light(frame, in.worldPos, towardsCamera) + lightning_sky_light(frame)) * smoothstep(0.2, 0.9, skyL);
     }
     // Alpha is replaced by the block-light marker pass (MetalShaders.markEntityLight): 0, already lit.
-    return float4(albedo.rgb * light, albedo.a);
+    return float4(highlight_rolloff(albedo.rgb * light), albedo.a);
 }

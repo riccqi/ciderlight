@@ -238,10 +238,8 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
 
     float lightStrength = frame.sunDir.w;
     float3 direct = float3(0.0);
-    float3 shade = float3(1.0);
     float3 glisten = float3(0.0);
     float3 sunVis = float3(0.0);
-    float3 ambientShare = float3(1.0); // the part of `shade` that is sky/ambient light rather than direct sun or moon
     int kind = sprite_kind(spriteMap, in.uv0);
     bool metal = kind == SPRITE_METAL;
     // Metals reflect in their own colour (Schlick with F0 = albedo), turning white only at grazing angles.
@@ -249,12 +247,24 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
     float3 viewN = dot(faceNormal, V) > 0.0 ? -faceNormal : faceNormal;
     // A torch or other light source in a player's hand lights the ground around them.
     blockL = max(blockL, held_light(frame, in.worldPos, viewN));
-    if (lightStrength > 0.0 && in.light.y > 0.0) {
-        // Flat face normal from screen-space derivatives, oriented towards the camera.
-        float3 n = faceNormal;
-        if (dot(n, -in.worldPos) < 0.0) {
-            n = -n;
+
+    // In the Overworld vanilla's fixed per-face shading (baked into the vertex colour) is replaced by light that knows
+    // where the sun is: a face turned to the sun is lit by it whichever way it points, and only the sky light keeps a
+    // gentle up-to-down falloff. Elsewhere vanilla's shading stays.
+    float faceShade = 1.0;
+    if (frame.solarDir.w > 0.5) {
+        if (!sprite_unshaded(spriteMap, in.uv0)) {
+            albedo.rgb /= vanilla_face_shade(viewN);
         }
+        faceShade = sky_face_shade(viewN);
+    }
+
+    // Sky light: blue, from the whole sky, in the shade and in the sun alike. Sun (or moon) light: warm, direct, and
+    // about two and a half times as bright, so sunlit faces stand clearly apart from shaded ones.
+    float3 skyLight = float3(1.0);
+    float3 sunLight = float3(0.0);
+    if (lightStrength > 0.0 && in.light.y > 0.0) {
+        float3 n = viewN;
         float3 lightDir = frame.sunDir.xyz;
         float ndotl = saturate(dot(n, lightDir));
         // A low sun grazes the ground. Lit strictly by the angle, everything flat would go dim well before sunset,
@@ -263,8 +273,10 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
 #ifdef ALPHA_CUTOUT
         // Foliage (biome-tinted cutouts: leaves, grass, vines) is thin, so sunlight passes through it: lit evenly
         // from any side, taking only the light that reaches it.
+        // Crossed plants (flowers, saplings, dead bushes) are just as thin, whatever their tint.
         float tintSpread = max(in.color.r, max(in.color.g, in.color.b)) - min(in.color.r, min(in.color.g, in.color.b));
-        if (tintSpread > 0.08) {
+        bool crossed = abs(faceNormal.y) < 0.3 && abs(abs(faceNormal.x) - abs(faceNormal.z)) < 0.35;
+        if (tintSpread > 0.08 || crossed) {
             facing = 0.85;
             ndotl = 1.0;
         }
@@ -282,13 +294,14 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             glisten = frame.sunColor.rgb * vis * (pow(ndoth, 64.0) * 1.0 + pow(ndoth, 8.0) * 0.12) * lightStrength;
             glisten *= mix(albedo.rgb, float3(1.0), pow(1.0 - saturate(dot(-V, h)), 5.0)) * 1.2;
         }
-
-        // Shadowed sky light is darker and cooler; directly lit surfaces take the sun or moon colour.
-        float darkness = frame.sunColor.w;
-        // atmosphere_shadow_tint(frame), worked out once per frame (frame_constants_fragment).
-        float3 shadowTint = frameConstants.read(uint2(0, 0)).rgb * (1.0 - darkness);
-        shade = mix(float3(1.0), filtered_surface_light(shadowTint, frame.sunColor.rgb, direct), lightStrength);
-        ambientShare = (1.0 - lightStrength) + lightStrength * (1.0 - saturate(direct)) * shadowTint;
+        // The sun crosses the sky from east to west, so east and west faces catch it most squarely of the walls:
+        // a little extra keeps a lit wall from reading as merely grey.
+        float sideCatch = 1.0 + 0.3 * n.x * n.x;
+        // Sunlit ground throws warm light back up onto walls and overhangs, so a wall in its own shadow at noon is not
+        // lit by the blue sky alone.
+        float3 bounce = frame.surfaceSun.rgb * (0.26 * (0.5 - 0.5 * n.y) * saturate(lightDir.y * 2.0));
+        skyLight = mix(float3(1.0), frame.surfaceAmbient.rgb + bounce, lightStrength);
+        sunLight = frame.surfaceSun.rgb * direct * (lightStrength * sideCatch);
 #ifdef MC_DEBUG_SHADOWS
         // Left half: N.L, right half: shadow visibility (red = facing away from the light).
         if (in.position.x < globals.ScreenSize.x * 0.5) {
@@ -297,16 +310,18 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
         return ndotl > 0.0 ? float4(vis, 1.0) : float4(0.6, 0.0, 0.0, 1.0);
 #endif
     }
-    float3 sky = skyTerm * frame.lightParams.y * shade;
+    float3 skyScale = skyTerm * frame.lightParams.y;
+    float3 skyAmbient = skyScale * skyLight * faceShade;
+    float3 sky = skyAmbient + skyScale * sunLight;
 
     // Block light (torch_light), washed out under direct daylight.
-    float3 blockTerm = float3(1.0, 0.66, 0.30) * torch_light(blockL);
+    float3 blockTerm = float3(1.0, 0.66, 0.30) * torch_light(blockL) * faceShade;
     // Under open daylight block light mostly disappears, as it does outdoors in real life.
     float daylight = skyL * skyL * frame.lightParams.x;
     blockTerm *= 1.0 - 0.8 * daylight * (0.6 + 0.4 * dot(direct, float3(0.333)));
 
     // A little cool ambient so caves and night shadows never go fully black (scales with the brightness option).
-    float3 ambient = floorL * float3(1.0, 1.05, 1.2);
+    float3 ambient = floorL * float3(1.0, 1.05, 1.2) * faceShade;
     float3 light = ambient + sky + blockTerm;
     // A lightning bolt lights what is open to the sky around it.
     if (frame.lightning.w > 0.0 && in.light.y > 0.0) {
@@ -334,9 +349,11 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
     // the ambient light: the sky light reaching shadowed surfaces and the cave floor, and torch light only slightly.
     // This is the share of the pixel's light it can remove; it is written to alpha at the end.
     const float3 luma = float3(0.2126, 0.7152, 0.0722);
-    float3 occludable = ambient + skyTerm * frame.lightParams.y * ambientShare + blockTerm * 0.3;
+    float3 occludable = ambient + skyAmbient + blockTerm * 0.3;
     // A reflection of the sky is ambient light too: corners and recesses see less of it.
     float aoShare = saturate(dot(albedo.rgb * occludable * diffuseShare + reflected, luma) / max(dot(color.rgb, luma), 1e-5));
+    // Sunlit sand, snow and pale stone go above 1: roll them off instead of clipping them flat.
+    color.rgb = highlight_rolloff(color.rgb);
 #ifdef ALPHA_CUTOUT
     // Flames are light sources: drawn at full brightness, unshaded, whatever the light around them. Every emitter
     // sits in its own block light, so the sprite lookup is skipped everywhere else.
@@ -429,7 +446,8 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             // Scattered light from deep water: the biome hue pulled towards teal, with only a trace of the vanilla
             // texture's pattern so the surface reads as water rather than as a tiled sprite.
             float texDetail = mix(1.0, dot(texel.rgb, float3(0.3333)) / 0.62, 0.2);
-            float3 deep = sqrt(saturate(in.color.rgb)) * float3(0.17, 0.40, 0.46) * texDetail * light;
+            float3 deep = sqrt(saturate(in.color.rgb)) * float3(0.13, 0.31, 0.38) * texDetail * light;
+            deep = mix(deep, float3(dot(deep, float3(0.2126, 0.7152, 0.0722))), 0.35); // a grey-blue, not a saturated teal
             float3 under = mix(seen * transmittance, deep, murk);
 
             // --- shoreline foam where the water is only a sliver deep ---
@@ -448,7 +466,9 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             float3 sky = frame.solarDir.w > 0.5 ? atmosphere_sky(frame, R) : fog.FogColor.rgb;
             // Covered water (low sky light) must not mirror a bright sky it cannot see.
             float3 reflColor = mix(deep, sky, smoothstep(0.3, 0.95, skyL));
-            float mirror = min(0.02 + 0.98 * pow(1.0 - saturate(dot(-V, nn)), 5.0), 0.92);
+            // Schlick's curve with a softer exponent than 5: a little more mirror at the shallow angles water is
+            // mostly seen at, so the banks and sky show in it as they do on a calm river.
+            float mirror = min(0.02 + 0.98 * pow(1.0 - saturate(dot(-V, nn)), 3.5), 0.92);
             // Seen from steeply above, water reflects about 2% of what is over it: whether that is the traced scene
             // or the sky cannot be told apart, so the ray is only traced where the reflection shows.
 #ifdef MC_NO_WATER_TRACE
@@ -548,11 +568,8 @@ fragment void shadow_fragment_cutout(ShadowOut in [[stage_in]],
     if (atlas.sample(atlasSampler, in.uv0, level(0)).a < 0.5) {
         discard_fragment();
     }
-    // Foliage lets about half the light through: a checkerboard of shadow-map texels is left open and the
-    // shadow filtering turns it into a half-strength shadow.
-    if (in.tintSpread > 0.08 && ((int(in.position.x) + int(in.position.y)) & 1) == 0) {
-        discard_fragment();
-    }
+    // Leaves and grass cast full shadows (their texture's holes already let light through), so the shadow of every
+    // tuft and canopy shows crisply on the ground.
 }
 
 // Translucent blocks are drawn into a colour map multiplied together (blend dst * src): what fraction of the

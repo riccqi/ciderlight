@@ -1,0 +1,38 @@
+HONEYCRISP: HOW TO INSTALL
+
+You need: an Apple Silicon Mac (M1 or newer) on macOS 15 or later, and Minecraft Java Edition.
+You only need the one file: honeycrisp-0.1.1.jar. Don't unzip it, and don't double-click it.
+
+
+OPTION A: Modrinth App (easiest)
+1. Download the Modrinth App from modrinth.com/app and sign in with your Microsoft account.
+2. Make a new instance: Minecraft 26.3, loader Fabric.
+3. Open the instance and drag honeycrisp-0.1.1.jar onto its content page.
+4. Press Play.
+
+
+OPTION B: Prism Launcher
+1. Download Prism Launcher from prismlauncher.org and add your Microsoft account.
+2. Add Instance: Minecraft 26.3, then choose Fabric under Mod Loader.
+3. Right-click the instance, choose Edit, open Mods, and drag the jar in.
+4. Press Launch. If it asks about Java, let it download Java 25 for you.
+
+
+OPTION C: The normal Minecraft Launcher
+1. Install Java if you don't have it (adoptium.net). The Fabric installer needs it.
+2. Get the Fabric installer from fabricmc.net/use. Choose "Download installer (Universal/.JAR)".
+   Close Minecraft, open the installer (if macOS blocks it, right-click it and choose Open),
+   pick 26.3, and click Install.
+3. In Finder, press Cmd+Shift+G and go to:
+      ~/Library/Application Support/minecraft
+   Make a folder called "mods" if there isn't one, and put the jar in it.
+4. Open the Minecraft Launcher, pick the "fabric-loader-26.3" profile, and press Play.
+
+
+TIPS
+- Shaders are on automatically. You don't need OptiFine or Iris.
+- Install it on its own first, without other graphics mods like Sodium or Iris.
+- It works on any server (it only changes your graphics).
+- For a new version, just swap the old jar for the new one.
+- Something wrong? Send me a screenshot plus the file logs/latest.log from your
+  instance or minecraft folder.

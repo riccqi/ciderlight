@@ -22,8 +22,8 @@
 constant float FOLIAGE_FADE_START = 64.0;
 constant float FOLIAGE_FADE_END = 96.0;
 
-// Sprite map layout: float2 cells per atlas UV, uint2 grid size, then one byte per cell (row-major): the low four
-// bits are the foliage kind above, the high four the sprite's material (SPRITE_* in terrain.metal).
+// Sprite map layout: float2 cells per atlas UV, uint2 grid size, then one byte per cell (row-major): the low three
+// bits are the foliage kind above (the fourth is sprite_unshaded), the high four the sprite's material (SPRITE_* in terrain.metal).
 static int sprite_map_cell(const device uchar *map, float2 uv) {
     float2 scale = *(const device float2 *)map;
     uint2 grid = *(const device uint2 *)(map + 8);
@@ -35,7 +35,12 @@ static int sprite_map_cell(const device uchar *map, float2 uv) {
 }
 
 static int foliage_kind(const device uchar *map, float2 uv) {
-    return sprite_map_cell(map, uv) & 15;
+    return sprite_map_cell(map, uv) & 7;
+}
+
+// Bit 8 of the low four: vanilla lights this sprite's quads as if they faced up, whatever their direction.
+static bool sprite_unshaded(const device uchar *map, float2 uv) {
+    return (sprite_map_cell(map, uv) & 8) != 0;
 }
 
 // A smooth, world-anchored wind field: slow gusts roll across the world along a prevailing direction, a sway

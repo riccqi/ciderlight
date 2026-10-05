@@ -19,8 +19,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -136,6 +138,7 @@ public final class MetalShaders {
     /** Light sources in players' hands (FrameData.heldLights), in the first slots of the block once left unused. */
     private static final int HELD_LIGHT_OFFSET = RAIN_MASK_OFFSET + 512;
     private static final int HELD_LIGHTS = 8; // HELD_LIGHTS in frame.metal
+    private static final int SURFACE_LIGHT_OFFSET = HELD_LIGHT_OFFSET + HELD_LIGHTS * 16; // surfaceSun, surfaceAmbient
     private static final int RAIN_GRID = 64;
     private static final int RAIN_CELL = 4;
     private static final int LIGHTNING_SHADOW_INDEX = 6;
@@ -264,6 +267,7 @@ public final class MetalShaders {
     private long handSpriteBuffer;
     private byte @Nullable [] handSpriteBytes;
     private final MemorySegment handFrame = Arena.global().allocate(48, 16);
+    private final MemorySegment cloudLight = Arena.global().allocate(48, 16);
     /** The UV rectangles of FLAME_PARTICLES in the particle atlas, for the block-light marker pass. */
     private final MemorySegment flameSprites = Arena.global().allocate(FLAME_PARTICLES.length * 16, 16);
     private final MemorySegment noFlameSprites = Arena.global().allocate(FLAME_PARTICLES.length * 16, 16);
@@ -329,6 +333,7 @@ public final class MetalShaders {
     private long entityLibrary;
     private long compositeLibrary;
     private long compositeState;
+    private long upscaleState;
     private long shadowHistoryState;
     private final long[] shadowHistoryTextures = new long[2];
     private int shadowHistoryWidth;
@@ -1120,6 +1125,8 @@ public final class MetalShaders {
     private static final byte FOLIAGE_LOWER = 3;
     private static final byte FOLIAGE_UPPER = 4;
     private static final byte FOLIAGE_HANGING = 5;
+    /** Low-nibble flag beside the foliage kind: the sprite's quads are not shaded by their direction (foliage.metal). */
+    private static final byte SPRITE_UNSHADED = 8;
 
     /** How a block's model waves (FOLIAGE_* in foliage.metal), or 0 if it stays still. */
     private static byte foliageKind(final BlockState state) {
@@ -1190,6 +1197,33 @@ public final class MetalShaders {
                     }
                 }
             }
+            // Sprites drawn only on quads that vanilla lights as if they faced up (torches, lanterns, vines, ladders,
+            // flower beds: "shade_direction_override"), whatever their real direction. Terrain divides vanilla's face
+            // shading back out by the face's direction, which must not happen for these (SPRITE_UNSHADED).
+            Set<TextureAtlasSprite> overridden = new HashSet<>();
+            Set<TextureAtlasSprite> shaded = new HashSet<>();
+            for (Block block : BuiltInRegistries.BLOCK) {
+                for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+                    parts.clear();
+                    models.get(state).collectParts(RandomSource.create(0), parts);
+                    for (BlockStateModelPart part : parts) {
+                        for (Direction side : sides) {
+                            for (BakedQuad quad : part.getQuads(side)) {
+                                TextureAtlasSprite sprite = quad.materialInfo().sprite();
+                                if (sprite == null || sprite == missing) {
+                                    continue;
+                                }
+                                Direction override = quad.materialInfo().shadeDirectionOverride();
+                                (override != null && override != quad.direction() ? overridden : shaded).add(sprite);
+                            }
+                        }
+                    }
+                }
+            }
+            overridden.removeAll(shaded);
+            for (TextureAtlasSprite sprite : overridden) {
+                sprites.merge(sprite, SPRITE_UNSHADED, (a, b) -> (byte)(a | b));
+            }
             for (int material = 0; material < MATERIAL_SPRITES.length; material++) {
                 for (String name : MATERIAL_SPRITES[material]) {
                     TextureAtlasSprite sprite = atlas.getSprite(Identifier.withDefaultNamespace("block/" + name));
@@ -1242,6 +1276,33 @@ public final class MetalShaders {
         }
         this.handSpriteBuffer = buffer;
         this.handSpriteBytes = bytes;
+    }
+
+    /**
+     * The light the cloud vertex shader shades its faces with (MetalRenderPipeline.sunlitClouds): the sun's direction
+     * and strength, and at golden hour a warm tint for the faces turned to it and a cool one for those turned away,
+     * both taken from the surface light with their brightness evened out to 1 and softened.
+     */
+    void bindCloudLight(final long enc) {
+        MemorySegment f = this.sampleFrame;
+        MemorySegment c = this.cloudLight;
+        for (int i = 0; i < 4; i++) {
+            c.set(ValueLayout.JAVA_FLOAT, i * 4, f.get(ValueLayout.JAVA_FLOAT, 80 + i * 4));
+        }
+        boolean moon = f.get(ValueLayout.JAVA_FLOAT, 360) > 0.5F;
+        float golden = moon ? 0.0F : f.get(ValueLayout.JAVA_FLOAT, AIR_NEAR_OFFSET + 8);
+        for (int t = 0; t < 2; t++) {
+            int at = SURFACE_LIGHT_OFFSET + t * 16;
+            float r = f.get(ValueLayout.JAVA_FLOAT, at), g = f.get(ValueLayout.JAVA_FLOAT, at + 4), b = f.get(ValueLayout.JAVA_FLOAT, at + 8);
+            float lum = Math.max(0.3F * r + 0.59F * g + 0.11F * b, 1.0e-3F);
+            float soft = t == 0 ? 0.5F : 0.45F;
+            float dim = t == 0 ? 1.0F : 0.95F; // the shaded side is a little darker as well as cooler
+            c.set(ValueLayout.JAVA_FLOAT, 16 + t * 16, lerp(1.0F, r / lum, soft) * dim);
+            c.set(ValueLayout.JAVA_FLOAT, 20 + t * 16, lerp(1.0F, g / lum, soft) * dim);
+            c.set(ValueLayout.JAVA_FLOAT, 24 + t * 16, lerp(1.0F, b / lum, soft) * dim);
+        }
+        c.set(ValueLayout.JAVA_FLOAT, 28, golden);
+        MetalNative.passSetBytes(enc, FRAME_INDEX, c, 48, MetalConst.STAGE_VERTEX);
     }
 
     /** Called when the first-person "Item in hand" pass opens: the data its item pipelines' shine needs. */
@@ -1566,6 +1627,31 @@ public final class MetalShaders {
         if (this.compositeLibrary == 0L) {
             this.compositeLibrary = MetalNative.libraryCreate(this.device.context(), this.compositeSource);
         }
+    }
+
+    float renderScale() {
+        return this.quality.renderScale;
+    }
+
+    /**
+     * Stretches the world, drawn at a fraction of the window's resolution (RenderScale), over the window-sized main
+     * target, with a little sharpening (upscale_fragment); the hand was drawn with the world, the HUD comes after.
+     */
+    void upscale(final long frame, final long source, final long target, final int width, final int height) {
+        this.ensureCompositeLibrary();
+        if (this.upscaleState == 0L) {
+            int[] desc = {0, 0, 1, COLOR_FORMAT, 15, 0, 0, 0, 0, 0, 0, 0, -1, MetalConst.PRIM_TRIANGLES};
+            this.upscaleState = MetalNative.pipelineCreate(
+                this.device.context(), this.compositeLibrary, "composite_vertex", this.compositeLibrary, "upscale_fragment", desc, "Honeycrisp upscale"
+            );
+        }
+        MetalNative.profileLabel("upscale");
+        long enc = MetalNative.passBeginOverwrite(frame, new long[]{target}, width, height);
+        MetalNative.passSetPipeline(enc, this.upscaleState, 0L, false, false, 0.0F, 0.0F);
+        MetalNative.passSetBytes(enc, 0, this.sampleFrame, FRAME_BYTES, BOTH);
+        MetalNative.passSetTexture(enc, 0, source, 0L, MetalConst.STAGE_FRAGMENT);
+        MetalNative.passDraw(enc, MetalConst.PRIM_TRIANGLES, 0, 3, 1, 0);
+        MetalNative.passEnd(enc);
     }
 
     private void composite(final long frame) {
@@ -2179,6 +2265,33 @@ public final class MetalShaders {
         // Night sky light is pulled well below vanilla so block light stands out.
         float nightSky = lerp(0.9F, 1.0F, sunVis) * duskLift;
 
+        // Light on surfaces: a warm direct sun on top of blue light from the open sky. The sun is about two and a half
+        // times as bright as the sky light in shade, so sunlit faces stand out clearly from shaded ones; a low sun is
+        // strongly orange and the shade around it more violet. At night the moon is a cool, dim key over a blue fill.
+        float[] surfaceSun = new float[3];
+        float[] surfaceAmbient = new float[3];
+        if (!moon) {
+            float noon = (float)Math.sqrt(Math.max(sun.y, 0.0F));
+            surfaceSun[0] = lerp(1.62F, 1.20F, noon);
+            surfaceSun[1] = lerp(0.88F, 1.02F, noon);
+            surfaceSun[2] = lerp(0.42F, 0.70F, noon);
+            surfaceAmbient[0] = lerp(0.62F, 0.50F, noon);
+            surfaceAmbient[1] = lerp(0.58F, 0.63F, noon);
+            surfaceAmbient[2] = lerp(0.70F, 0.86F, noon);
+        } else {
+            float m = lerp(0.75F, 1.0F, moonLight);
+            surfaceSun[0] = 0.95F * m;
+            surfaceSun[1] = 1.05F * m;
+            surfaceSun[2] = 1.30F * m;
+            surfaceAmbient[0] = 0.44F;
+            surfaceAmbient[1] = 0.49F;
+            surfaceAmbient[2] = 0.60F;
+        }
+        // Under rain clouds the light is flat and grey: the sun fades (strength) and the sky light loses its blue.
+        for (int i = 0; i < 3; i++) {
+            surfaceAmbient[i] = lerp(surfaceAmbient[i], 0.62F, rain);
+        }
+
         // Shadow volume centred on the camera, snapped to whole shadow-map texels in the light's view so shadow edges
         // (on the ground and in the volumetric fog) stay put as the player walks instead of crawling.
         Vec3 anchor = texelSnappedAnchor(cameraPos, light, SHADOW_RADIUS, this.shadowSize);
@@ -2237,6 +2350,10 @@ public final class MetalShaders {
             seg.set(ValueLayout.JAVA_FLOAT, WATER_OFFSET + 4, (float)(waterSurface - cameraPos.y));
             seg.set(ValueLayout.JAVA_FLOAT, WATER_OFFSET + 8, this.waterSky);
             seg.set(ValueLayout.JAVA_FLOAT, WATER_OFFSET + 12, waterDensity);
+            for (int i = 0; i < 3; i++) {
+                seg.set(ValueLayout.JAVA_FLOAT, SURFACE_LIGHT_OFFSET + i * 4, surfaceSun[i]);
+                seg.set(ValueLayout.JAVA_FLOAT, SURFACE_LIGHT_OFFSET + 16 + i * 4, surfaceAmbient[i]);
+            }
         }
         // cameraPos.w: the cloud base above the camera; with no clouds in the map nothing is under them.
         this.sampleFrame.set(ValueLayout.JAVA_FLOAT, 348, Double.isNaN(this.cloudBase) ? -1.0e9F : (float)(this.cloudBase - cameraPos.y));
@@ -2397,7 +2514,7 @@ public final class MetalShaders {
         casterView = null;
         List<Long> handles = new ArrayList<>(List.of(this.skyLibrary, this.skyState, this.farShadowColorTextures[0], this.farShadowTextures[0], this.farShadowColorTextures[1],
             this.farShadowTextures[1], this.extinctionTextures[0], this.extinctionTextures[1], this.shadowTexture, this.shadowSampler, this.shadowLibrary, this.shadowSolidState,
-            this.shadowCutoutState, this.entityLibrary, this.compositeLibrary, this.compositeState, this.opaqueColor, this.opaqueDepth,
+            this.shadowCutoutState, this.entityLibrary, this.compositeLibrary, this.compositeState, this.upscaleState, this.opaqueColor, this.opaqueDepth,
             this.volumetricState, this.volumetricTextures[0], this.volumetricTextures[1], this.shadowColorTexture, this.shadowTranslucentState,
             this.shadowHistoryState, this.shadowHistoryTextures[0], this.shadowHistoryTextures[1], this.cloudShadowState, this.foliageBuffer,
             this.cloudMapTexture, this.cloudMapState, this.frameConstantsTexture, this.frameConstantsState, this.lightningShadowTexture,

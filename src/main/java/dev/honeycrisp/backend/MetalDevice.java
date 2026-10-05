@@ -42,6 +42,9 @@ public class MetalDevice implements GpuDeviceBackend {
     private record TexelViewKey(long buffer, long offset, long length, int format) {
     }
 
+    /** The device the game renders with, for RenderScale; null when the game is not on Honeycrisp's backend. */
+    static volatile @Nullable MetalDevice current;
+
     MetalDevice(final long context, final boolean debugging) {
         this.context = context;
         this.debugging = debugging;
@@ -63,6 +66,7 @@ public class MetalDevice implements GpuDeviceBackend {
         );
         this.encoder = new MetalCommandEncoder(this);
         this.shaders = new MetalShaders(this, Quality.of(name));
+        current = this;
     }
 
     MetalShaders shaders() {
@@ -84,6 +88,9 @@ public class MetalDevice implements GpuDeviceBackend {
 
     @Override
     public void close() {
+        if (current == this) {
+            current = null;
+        }
         this.encoder.destroy();
         this.shaders.destroy();
         this.depthStates.values().forEach(MetalNative::release);

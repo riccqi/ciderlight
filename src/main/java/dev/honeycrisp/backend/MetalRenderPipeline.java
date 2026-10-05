@@ -134,6 +134,90 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
         return new MetalShaderCompiler.Result(patched, msl.entryPoint());
     }
 
+    /** Vanilla's cloud face brightness (bottom, top, north, south, west, east), as SPIR-V Cross writes the array. */
+    private static final java.util.regex.Pattern CLOUD_FACES = java.util.regex.Pattern.compile(
+        "(constant spvUnsafeArray<float4, 6> _\\d+ = spvUnsafeArray<float4, 6>\\(\\{ )float4\\(0\\.69999998[^;]*?(\\}\\);)");
+
+    /**
+     * Vanilla shades clouds in flat greys (undersides 0.7, walls 0.8 and 0.9). With Honeycrisp shaders on they are
+     * shaded like the sky lights them: sunlit white tops, walls a little cooler and the undersides a blue grey, so
+     * they read as volumes against the pale sky instead of flat cut-outs.
+     */
+    private static MetalShaderCompiler.Result shadedClouds(final String pipeline, final MetalShaderCompiler.Result msl) {
+        if (!isOpaqueCloud(pipeline)) {
+            return msl;
+        }
+        java.util.regex.Matcher m = CLOUD_FACES.matcher(msl.source());
+        if (!m.find()) {
+            LOGGER.warn("Honeycrisp: unexpected cloud shader layout in {}, leaving cloud shading as it is", pipeline);
+            return msl;
+        }
+        String faces = "float4(0.76, 0.76, 0.83, 1.0), float4(1.0, 0.99, 0.97, 1.0), float4(0.86, 0.865, 0.90, 1.0), "
+            + "float4(0.86, 0.865, 0.90, 1.0), float4(0.93, 0.93, 0.95, 1.0), float4(0.93, 0.93, 0.95, 1.0) ";
+        String patched = msl.source().substring(0, m.start()) + m.group(1) + faces + m.group(2) + msl.source().substring(m.end());
+        return new MetalShaderCompiler.Result(patched, msl.entryPoint());
+    }
+
+    /** Added to the cloud vertex shader; MetalShaders.bindCloudLight supplies the buffer. */
+    private static final String CLOUD_LIGHT_MSL = """
+        struct McCloudLight
+        {
+            float4 sun;   // xyz: direction to the sun (or moon), w: how strongly it lights the clouds
+            float4 warm;  // rgb: tint of the faces turned to a low sun, w: golden hour (1 with the sun at the horizon)
+            float4 cool;  // rgb: tint of the faces turned away from it
+        };
+
+        // Clouds scatter most of their light, so at noon the walls facing the sun are only a little brighter than
+        // those facing away. As the sun drops it lights them side-on: the sun-facing walls (and, grazed, the tops)
+        // glow warm while the far side falls into a slightly cooler shade. The whole cloud takes on some of the low
+        // sun's colour, the faces turned to it most. Looking toward a low sun, light scattered
+        // forward through the clouds makes the whole cloud glow warm. `direction` is vanilla's face index (down, up,
+        // north, south, west, east), `face` the base shade of that face, `pos` the vertex relative to the camera.
+        static float3 mc_cloud_light(constant McCloudLight& light, int direction, bool top, float3 face, float3 pos)
+        {
+            const float3 normals[6] = { float3(0, -1, 0), float3(0, 1, 0), float3(0, 0, -1), float3(0, 0, 1), float3(-1, 0, 0), float3(1, 0, 0) };
+            float3 n = top ? float3(0, 1, 0) : normals[clamp(direction, 0, 5)];
+            float ndl = dot(n, light.sun.xyz);
+            float k = light.sun.w;
+            float golden = light.warm.w;
+            float lit = saturate(ndl);
+            float away = saturate(-ndl);
+            float side = 1.0 + k * (0.08 + 0.18 * golden) * lit - k * (0.05 + 0.04 * golden) * away;
+            float forward = golden * pow(saturate(dot(normalize(pos), light.sun.xyz)), 3.0);
+            float3 warm = mix(float3(1.0), light.warm.xyz, saturate(golden * (0.5 + 0.5 * saturate(0.2 + 0.8 * ndl)) + 0.8 * forward));
+            float3 cool = mix(float3(1.0), light.cool.xyz, golden * away * (1.0 - forward));
+            return face * (side + 0.12 * forward) * warm * cool;
+        }
+
+        """;
+
+    private static final java.util.regex.Pattern CLOUD_COLOR = java.util.regex.Pattern.compile("out\\.vertexColor = (_\\d+) \\* (_\\d+)\\.CloudColor;");
+
+    /**
+     * Shades each cloud face by where the sun is (see mc_cloud_light), on top of shadedClouds' fixed face greys, so a
+     * low sun gives the clouds a warm lit side and a cool shaded one.
+     */
+    private static MetalShaderCompiler.Result sunlitClouds(final String pipeline, final MetalShaderCompiler.Result msl) {
+        if (!MetalShaders.ENABLED || !pipeline.equals("minecraft:pipeline/clouds")) {
+            return msl;
+        }
+        String source = msl.source();
+        java.util.regex.Matcher color = CLOUD_COLOR.matcher(source);
+        String entry = "vertex main0_out main0(";
+        int entryAt = source.indexOf(entry);
+        int entryEnd = entryAt < 0 ? -1 : source.indexOf(")\n{", entryAt);
+        if (entryEnd < 0 || !color.find() || !source.contains("int direction =") || !source.contains("bool useTopColor =") || !source.contains("float3 pos =")) {
+            LOGGER.warn("Honeycrisp: unexpected cloud shader layout in {}, clouds will not be lit by the sun", pipeline);
+            return msl;
+        }
+        String patched = source.substring(0, color.start())
+            + "out.vertexColor = float4(mc_cloud_light(mcCloud, direction, useTopColor, " + color.group(1) + ".xyz, pos), " + color.group(1) + ".w) * "
+            + color.group(2) + ".CloudColor;" + source.substring(color.end());
+        patched = patched.substring(0, entryAt) + CLOUD_LIGHT_MSL + patched.substring(entryAt, entryEnd)
+            + ", constant McCloudLight& mcCloud [[buffer(14)]]" + patched.substring(entryEnd);
+        return new MetalShaderCompiler.Result(patched, msl.entryPoint());
+    }
+
     /**
      * Vanilla's lightning bolt is a pale, mostly transparent grey. With Honeycrisp shaders on it is drawn several
      * times brighter, so its additive layers build up to a white-hot core with a wide glow.
@@ -282,6 +366,9 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
                 if (module.type() != ShaderType.VERTEX) {
                     msl = opaqueClouds(info.name(), msl);
                     msl = brightLightning(info.name(), msl);
+                } else {
+                    msl = shadedClouds(info.name(), msl);
+                    msl = sunlitClouds(info.name(), msl);
                 }
                 long lib;
                 try {

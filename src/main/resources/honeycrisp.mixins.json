@@ -11,7 +11,9 @@
     "LevelExtractorMixin",
     "LevelRendererMixin",
     "EntityRendererMixin",
-    "BlockEntityRenderDispatcherMixin"
+    "BlockEntityRenderDispatcherMixin",
+    "GameRendererMixin",
+    "RenderTargetAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
