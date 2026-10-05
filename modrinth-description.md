@@ -31,6 +31,16 @@ On by default, written for Metal from scratch:
 
 Vanilla resource packs keep working.
 
+## Shader settings
+
+Go to **Options > Video Settings**. The first button under the graphics preset is **Shaders**:
+
+- **High**: everything at full quality.
+- **Low**: smaller shadow maps, coarser fog, and the world drawn at a lower resolution. Much lighter on the graphics chip, with most of the look.
+- **Off**: Minecraft's normal look, still drawn with Metal.
+
+The change applies after you restart the game. Pick **Low** on A-series or lower-tier M chips, and **High** on everything else. A-series Macs start on Low by themselves; all others start on High.
+
 ## Installing
 
 **Easiest: Modrinth App or Prism Launcher**
@@ -49,7 +59,6 @@ Honeycrisp doesn't need Fabric API. It is client-side only, so it works on any s
 
 - It hasn't been tested with other rendering mods (Sodium, Iris and similar). Try it on its own first.
 - OptiFine and Iris shader packs aren't supported. Honeycrisp has its own shaders instead.
-- Shaders can be set to Off, Low or High in **Options > Video Settings** (takes effect after a restart). Macs with an A-series chip start on Low.
 - Turn it off without uninstalling by adding `-Dhoneycrisp.disable=true` to the JVM arguments.
 
 ## License
