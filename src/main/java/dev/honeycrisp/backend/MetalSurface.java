@@ -67,8 +67,8 @@ public class MetalSurface implements GpuSurfaceBackend {
             // is not presented rather than the game freezing until it lets go (see mc_layer_next_drawable).
             this.drawable = MetalNative.layerNextDrawable(this.layer, VSYNC_TIMEOUT_MS);
         } else {
-            // Uncapped: if every drawable is still queued for display, render this frame without presenting it.
-            this.drawable = MetalNative.layerTryNextDrawable(this.layer);
+            // Uncapped: take the drawable fetched since the last present, or render this frame without presenting it.
+            this.drawable = MetalNative.layerNextDrawable(this.layer, 0);
         }
         if (HitchTrace.ENABLED) {
             HitchTrace.acquired(this.drawable != 0L);
@@ -94,6 +94,10 @@ public class MetalSurface implements GpuSurfaceBackend {
             // already read the mouse and keyboard, so every frame spent waiting there was a frame of input lag.
             MetalNative.layerPrefetchDrawable(this.layer, VSYNC_TIMEOUT_MS);
             this.pacer.frameStart();
+        } else {
+            // Uncapped: fetch the next frame's drawable in the background while that frame is built, so a drawable that
+            // frees up while the GPU is still busy with this frame is ready for it, without the render thread waiting.
+            MetalNative.layerPrefetchDrawable(this.layer, 0);
         }
         if (HitchTrace.ENABLED) {
             HitchTrace.endFrame();

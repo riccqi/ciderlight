@@ -73,7 +73,7 @@ public final class MetalNative {
         static MethodHandle poolPush, poolPop, frameBegin, frameCommit, blitCopyBuffer, blitBufferToTexture, blitTextureToBuffer, blitTextureToTexture;
         static MethodHandle clearTexture, clearRegion, passBegin, passEnd, passPushDebug, passPopDebug, passSetPipeline, passSetDepthClamp, passSetScissor;
         static MethodHandle passSetVertexBuffer, passBind, passPushConstants, passDraw, passDrawIndexed, passMultiDrawIndexed, passMultiDraw;
-        static MethodHandle passDrawIndexedIndirect, passDrawSectionsCulled, passDrawIndirect, layerSetup, layerConfigure, layerNextDrawable, layerPrefetchDrawable, layerTryNextDrawable, present;
+        static MethodHandle passDrawIndexedIndirect, passDrawSectionsCulled, passDrawIndirect, layerSetup, layerConfigure, layerNextDrawable, layerPrefetchDrawable, present;
         static MethodHandle passSetBytes, passSetBuffer, passSetTexture, samplerCreateCompare, layerDisplayTiming, pacingTake;
         static MethodHandle profileEnable, profileLabel, profileTrace, profileReport, profilePeaks, traceStats, traceEnable;
 
@@ -137,7 +137,6 @@ public final class MetalNative {
             layerConfigure = fn("mc_layer_configure", v(P, I, I, I));
             layerNextDrawable = fn("mc_layer_next_drawable", r(P, P, I));
             layerPrefetchDrawable = fn("mc_layer_prefetch_drawable", v(P, I));
-            layerTryNextDrawable = fn("mc_layer_try_next_drawable", r(P, P));
             present = fn("mc_present", v(P, P, P, I, I, JAVA_DOUBLE));
             layerDisplayTiming = fn("mc_layer_display_timing", v(ADDRESS));
             pacingTake = fn("mc_pacing_take", v(ADDRESS));
@@ -735,7 +734,10 @@ public final class MetalNative {
         }
     }
 
-    /** Waits up to timeoutMs for the next drawable without taking it; layerNextDrawable then returns it at once. */
+    /**
+     * Starts fetching the next drawable and waits up to timeoutMs for it without taking it (0: only starts it);
+     * layerNextDrawable then returns it at once.
+     */
     public static void layerPrefetchDrawable(long layer, int timeoutMs) {
         try {
             long start = System.nanoTime();
@@ -743,14 +745,6 @@ public final class MetalNative {
             if (HitchTrace.ENABLED) {
                 HitchTrace.add(HitchTrace.DRAWABLE_PREFETCH, System.nanoTime() - start);
             }
-        } catch (Throwable t) {
-            throw rethrow(t);
-        }
-    }
-
-    public static long layerTryNextDrawable(long layer) {
-        try {
-            return (long) Handles.layerTryNextDrawable.invokeExact(layer);
         } catch (Throwable t) {
             throw rethrow(t);
         }

@@ -1310,10 +1310,10 @@ EXPORT void mc_layer_setup(void *ctxPtr, void *layerPtr) {
     layer.opaque = YES;
 }
 
-// Vsync: nextDrawable blocks until the compositor frees a drawable, and when it holds on to them (window server
-// busy, window covered) that is a full second before it gives up, freezing the game. The request runs on a queue of
-// its own instead and the render thread waits at most timeoutMs for it; past that the frame is rendered without
-// being presented, and the drawable that arrives late goes to the next frame.
+// nextDrawable blocks until the compositor frees a drawable, and when it holds on to them (window server busy, window
+// covered) that is a full second before it gives up, freezing the game. The request runs on a queue of its own instead
+// and the render thread waits at most timeoutMs for it (vsync: up to a refresh; uncapped: not at all); past that the
+// frame is rendered without being presented, and the drawable that arrives late goes to the next frame.
 static pthread_mutex_t mc_vsync_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t mc_vsync_cond = PTHREAD_COND_INITIALIZER;
 static void *mc_vsync_ready = NULL; // +1 retained drawable not yet handed out
@@ -1365,25 +1365,6 @@ EXPORT void mc_layer_configure(void *layerPtr, int width, int height, int vsync)
     [CATransaction commit];
     // A drawable fetched ahead has the old size (or belongs to the other present mode).
     mc_vsync_drop_ready();
-}
-
-// Drawables acquired but not yet on screen (single game window, so one counter suffices).
-static _Atomic int mc_drawables_in_flight = 0;
-
-// Uncapped mode: hand out a drawable only if one is free, so the render loop never waits on the
-// compositor. Returns NULL when the frame should be rendered but not presented.
-EXPORT void *mc_layer_try_next_drawable(void *layerPtr) {
-    @autoreleasepool {
-        CAMetalLayer *layer = BORROW(CAMetalLayer *, layerPtr);
-        // The compositor keeps the on-screen drawable (and the one it replaces) busy past the presented
-        // callback, so only allow a single drawable waiting for display to keep nextDrawable non-blocking.
-        if (mc_drawables_in_flight >= 1) return NULL;
-        id<CAMetalDrawable> drawable = mc_trace_next_drawable(layer);
-        if (drawable == nil) return NULL;
-        mc_drawables_in_flight++;
-        [drawable addPresentedHandler:^(id<MTLDrawable> d) { mc_drawables_in_flight--; }];
-        return (void *)CFBridgingRetain(drawable);
-    }
 }
 
 // Starts fetching the next drawable if none is ready or on its way, then waits up to timeoutMs for it.
