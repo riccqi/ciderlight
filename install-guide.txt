@@ -33,8 +33,8 @@ SHADER SETTINGS: OFF, LOW, HIGH
 In the game, go to Options > Video Settings. The first button under the graphics preset is
 "Shaders". Click it to switch between:
 - High: everything at full quality.
-- Low: smaller shadow maps, coarser fog, and the world drawn at two thirds of the window's
-  resolution. Much lighter on the graphics chip, with most of the look.
+- Low: smaller shadow maps, coarser fog, and the world drawn at a lower resolution.
+  Much lighter on the graphics chip, with most of the look.
 - Off: Minecraft's normal look, still drawn with Metal.
 The change applies after you quit and restart the game.
 
