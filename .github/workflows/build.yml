@@ -1,0 +1,40 @@
+name: Build Honeycrisp
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Build native library, JAR, and run Java regression checks
+        run: ./gradlew --no-daemon build
+      - name: Record source revision and checksums
+        run: |
+          mkdir -p build/release
+          cp build/libs/honeycrisp-*.jar build/release/
+          git rev-parse HEAD > build/release/SOURCE_COMMIT.txt
+          sw_vers > build/release/BUILD_ENVIRONMENT.txt
+          clang --version >> build/release/BUILD_ENVIRONMENT.txt
+          java -version 2>> build/release/BUILD_ENVIRONMENT.txt
+          cd build/release
+          shasum -a 256 *.jar > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: honeycrisp-${{ github.sha }}
+          path: build/release/
+          if-no-files-found: error
+          retention-days: 90

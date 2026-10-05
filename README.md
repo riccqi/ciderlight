@@ -210,6 +210,13 @@ automatically from what the display can show (on a ProMotion display 120, 80 or 
 
 ## Building
 
+The [GitHub Actions build](https://github.com/riccqi/honeycrisp/actions/workflows/build.yml) builds the Java code and
+the native library from source on macOS. Each successful run provides a JAR, its SHA-256 checksum, the source commit,
+and the build environment. The bundled `natives/libhoneycrisp.dylib` is compiled from `src/main/native/honeycrisp.m`
+by the `buildNative` Gradle task; it is not a downloaded third-party binary. Release uploads should use the JAR from
+that run without rebuilding it, so reviewers can compare the uploaded file directly with the automation artifact.
+GPU shader regressions run locally with `python3 tests/check_shaders.py` because they require a Metal device.
+
 `./gradlew installMod` builds the jar and copies it into the launcher's mods folder, so the next launch of the
 Fabric profile uses the current shaders.
 
