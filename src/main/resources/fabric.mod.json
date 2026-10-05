@@ -5,6 +5,10 @@
   "name": "Honeycrisp",
   "description": "Native Apple Metal rendering backend for Minecraft.",
   "authors": ["Richard Qi"],
+  "contact": {
+    "sources": "https://github.com/riccqi/honeycrisp",
+    "issues": "https://github.com/riccqi/honeycrisp/issues"
+  },
   "license": "Apache-2.0",
   "environment": "client",
   "entrypoints": {},
