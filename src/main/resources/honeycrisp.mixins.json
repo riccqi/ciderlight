@@ -15,7 +15,8 @@
     "GameRendererMixin",
     "RenderTargetAccessor",
     "VideoSettingsScreenMixin",
-    "OptionsMixin"
+    "OptionsMixin",
+    "RenderPipelinesMixin"
   ],
   "injectors": {
     "defaultRequire": 1
