@@ -1,0 +1,128 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+base { archivesName = "honeycrisp" }
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+}
+
+// Objective-C bridge to Metal, compiled with the system clang and bundled in the jar.
+def nativeSrc = file("src/main/native")
+def nativeOut = layout.buildDirectory.file("native/libhoneycrisp.dylib")
+tasks.register('buildNative', Exec) {
+	inputs.dir nativeSrc
+	outputs.file nativeOut
+	doFirst { nativeOut.get().asFile.parentFile.mkdirs() }
+	commandLine 'clang', '-dynamiclib', '-fobjc-arc', '-O2', '-arch', 'arm64',
+		'-mmacosx-version-min=15.0', '-Wall', '-Wno-unused-function',
+		'-framework', 'Metal', '-framework', 'QuartzCore', '-framework', 'Foundation', '-framework', 'AppKit',
+		'-o', nativeOut.get().asFile.absolutePath,
+		"${nativeSrc}/honeycrisp.m"
+}
+
+processResources {
+	dependsOn 'buildNative'
+	from(nativeOut) { into 'natives' }
+	def version = project.version
+	inputs.property "version", version
+	filesMatching("fabric.mod.json") { expand "version": version }
+	// Apache-2.0: the licence and the notice travel with the jar.
+	from(rootProject.file("LICENSE")) { into 'META-INF' }
+	from(rootProject.file("NOTICE")) { into 'META-INF' }
+}
+
+tasks.withType(JavaCompile).configureEach { it.options.release = 25 }
+
+java {
+	toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+// Exercise binding-cache invalidation and compare cached encoder state against uncached state.
+tasks.register('compileBindingChecks', JavaCompile) {
+	source 'src/main/java/dev/honeycrisp/backend/MetalBindingCache.java', 'tests/java'
+	classpath = files()
+	destinationDirectory = layout.buildDirectory.dir('binding-checks')
+}
+tasks.register('checkBackendBindings', JavaExec) {
+	dependsOn 'compileBindingChecks'
+	classpath = files(layout.buildDirectory.dir('binding-checks'))
+	mainClass = 'dev.honeycrisp.backend.MetalBindingCacheChecks'
+	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+}
+tasks.named('check') { dependsOn 'checkBackendBindings' }
+
+tasks.register('compileShadowCasterChecks', JavaCompile) {
+	dependsOn 'classes'
+	source 'tests/shadows'
+	classpath = sourceSets.main.compileClasspath + sourceSets.main.output
+	destinationDirectory = layout.buildDirectory.dir('shadow-caster-test-classes')
+}
+tasks.register('checkShadowCasters', JavaExec) {
+	dependsOn 'compileShadowCasterChecks'
+	classpath = sourceSets.main.runtimeClasspath + files(layout.buildDirectory.dir('shadow-caster-test-classes'))
+	mainClass = 'dev.honeycrisp.backend.ShadowCasterChecks'
+	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+}
+tasks.named('check') { dependsOn 'checkShadowCasters' }
+
+loom {
+	runs {
+		client {
+			vmArgs "--enable-native-access=ALL-UNNAMED"
+			if (project.hasProperty("vanilla")) {
+				vmArgs "-Dhoneycrisp.disable=true"
+			}
+			if (project.hasProperty("validate")) {
+				environmentVariable "MTL_DEBUG_LAYER", "1"
+				environmentVariable "MTL_DEBUG_LAYER_ERROR_MODE", "nslog"
+				environmentVariable "MTL_SHADER_VALIDATION", "0"
+			}
+			if (project.hasProperty("shaderDebug")) {
+				vmArgs "-Dhoneycrisp.shaderDebug=true"
+			}
+			if (project.hasProperty("nocasters")) {
+				vmArgs "-Dhoneycrisp.shadowCasters=false"
+			}
+			if (project.hasProperty("noshaders")) {
+				vmArgs "-Dhoneycrisp.shaders=false"
+			}
+			if (project.hasProperty("debug")) {
+				vmArgs "-Dhoneycrisp.debug=true"
+			}
+			if (project.hasProperty("trace")) {
+				vmArgs "-Dhoneycrisp.trace=true"
+			}
+			for (String key : ["benchTime", "benchYaw", "benchPitch", "benchWeather", "benchShot", "benchShot2", "benchSequence", "benchX", "benchZ", "benchCamX", "benchCamY", "benchMove", "benchWalk", "benchSprint", "benchJump", "benchTrees", "benchWater", "benchReflection", "benchFog", "benchGlass", "benchFoliage", "benchDayCycle", "vlHistory", "shadowHistory", "waving", "wavingDebug", "ao", "aoDebug", "gpuProfile", "framesInFlight", "benchEyeY", "fogNear", "fogNearRange", "benchLightning", "benchItem", "benchThirdPerson", "benchTorch", "benchBreak", "benchFlatWorld", "dumpShaders", "shadowCull", "mainCull", "hitchTraceSeconds", "autoTurn", "autoWalk", "casterMask", "casterSweep", "quality", "shadowSize", "waterReflections", "benchPos", "benchRun", "benchClock", "framePacing"]) {
+				if (project.hasProperty(key)) {
+					vmArgs "-Dhoneycrisp." + key + "=" + project.property(key)
+				}
+			}
+			if (project.hasProperty("benchScene")) {
+				vmArgs "-Dhoneycrisp.benchScene=true"
+			}
+			if (project.hasProperty("bench")) {
+				vmArgs "-Dhoneycrisp.bench=" + project.property("bench")
+			}
+			if (project.hasProperty("fullscreen")) {
+				programArgs "--fullscreen"
+			}
+			// A fixed player name: a save holding player data under that name's offline id opens where it was left.
+			if (project.hasProperty("username")) {
+				programArgs "--username", project.property("username")
+			}
+			if (project.hasProperty("world")) {
+				programArgs "--quickPlaySingleplayer", project.property("world")
+			}
+		}
+	}
+}
+
+// Copies the built jar into the launcher's mods folder: `./gradlew installMod`, then press Play on the Fabric profile.
+tasks.register('installMod', Copy) {
+	dependsOn 'build'
+	from layout.buildDirectory.file("libs/honeycrisp-${version}.jar")
+	into "${System.getProperty('user.home')}/Library/Application Support/minecraft/mods"
+}

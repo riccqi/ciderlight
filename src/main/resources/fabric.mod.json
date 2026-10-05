@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "honeycrisp",
+  "version": "${version}",
+  "name": "Honeycrisp",
+  "description": "Native Apple Metal rendering backend for Minecraft.",
+  "authors": ["Richard Qi"],
+  "license": "Apache-2.0",
+  "environment": "client",
+  "entrypoints": {},
+  "mixins": ["honeycrisp.mixins.json"],
+  "depends": { "fabricloader": ">=0.19.0", "minecraft": "26.3", "java": ">=25" }
+}

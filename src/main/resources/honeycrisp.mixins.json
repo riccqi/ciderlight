@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "package": "dev.honeycrisp.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "MinecraftMixin",
+    "PreferredGraphicsApiMixin",
+    "SectionOcclusionGraphMixin",
+    "WaterFogEnvironmentMixin",
+    "ScreenEffectRendererMixin",
+    "LevelExtractorMixin",
+    "LevelRendererMixin",
+    "EntityRendererMixin",
+    "BlockEntityRenderDispatcherMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
