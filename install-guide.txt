@@ -38,12 +38,8 @@ In the game, go to Options > Video Settings. The first button under the graphics
 - Off: Minecraft's normal look, still drawn with Metal.
 The change applies after you quit and restart the game.
 
-Which one to pick:
-- Low on an A-series chip, or on a lower-tier M chip: a plain M1, M2, M3 or M4 (the ones
-  without "Pro", "Max" or "Ultra" in the name).
-- High on Pro, Max and Ultra chips.
-Macs with an A-series chip start on Low by themselves; all others start on High, so on a
-plain M chip, switch to Low if the game doesn't run smoothly.
+Which one to pick: Low on A-series or lower-tier M chips, High on everything else.
+A-series Macs start on Low by themselves; all others start on High.
 
 
 TIPS
