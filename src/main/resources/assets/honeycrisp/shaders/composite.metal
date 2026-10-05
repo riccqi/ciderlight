@@ -288,7 +288,9 @@ static float3 volumetric_scattering(texture2d<float> volumetric, float2 uv, floa
 }
 
 // Reconstruct scattering and transmission with the same depth-aware weights.
-static float4 air_sample(texture2d<float> light, texture2d<float> extinction, float2 uv, float rayFraction) {
+// The open sky and what stands in front of it never share a texel: far terrain is at nearly the sky's ray length but
+// in different fog, and blending the two redraws distant silhouettes at the fog buffer's coarse resolution.
+static float4 air_sample(texture2d<float> light, texture2d<float> extinction, float2 uv, float rayFraction, bool sky) {
     float2 p = uv * float2(light.get_width(), light.get_height()) - 0.5;
     int2 base = int2(floor(p)), hi = int2(light.get_width(), light.get_height()) - 1;
     float4 sum = float4(0.0);
@@ -299,12 +301,15 @@ static float4 air_sample(texture2d<float> light, texture2d<float> extinction, fl
         uint2 texel = uint2(clamp(base + int2(x, y), int2(0), hi));
         float4 v = light.read(texel);
         float2 tent = saturate(1.0 - abs(float2(base + int2(x, y)) - p));
-        float weight = tent.x * tent.y * saturate(1.0 - abs(v.a - rayFraction) * 40.0);
+        // Only the open sky stores exactly 1 (volumetric_fragment).
+        bool sameKind = (v.a > 0.999) == sky;
+        float weight = sameKind ? tent.x * tent.y * saturate(1.0 - abs(v.a - rayFraction) * 40.0) : 0.0;
         float4 fog = float4(v.rgb, extinction.read(texel).r);
         sum += fog * weight;
         total += weight;
-        if (abs(v.a - rayFraction) < closestGap) {
-            closestGap = abs(v.a - rayFraction);
+        float gap = abs(v.a - rayFraction) + (sameKind ? 0.0 : 1.0);
+        if (gap < closestGap) {
+            closestGap = gap;
             closest = fog;
             closestFraction = v.a;
         }
@@ -432,7 +437,7 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
         color = color * exp(-extinction * waterDistance)
               + volumetric_scattering(volumetric, in.uv, min(waterDistance / 48.0, 1.0), true);
     } else {
-        float4 fog = air_sample(volumetric, extinctionHistory, in.uv, min(dist / air_range(frame), 1.0));
+        float4 fog = air_sample(volumetric, extinctionHistory, in.uv, min(dist / air_range(frame), 1.0), isSky);
         // Clouds take less of the haze than the ground does: most of the air is below them, and they should stand
         // out white against the sky rather than melt into it.
         bool cloud = !isSky && frame.cameraPos.w > -1.0e8 && worldPos.y > frame.cameraPos.w - 0.5;
@@ -549,6 +554,8 @@ fragment VolumeOutput volumetric_fragment(VOut in [[stage_in]],
                 // Reject history from a very different depth (something moved in front or behind).
                 float depthDiff = abs(h.a - dist / maxDist);
                 float keep = depthDiff < 0.025 ? (underwater ? 0.92 : frame.airParams.w) : 0.0;
+                // Nor across the edge between the open sky (stored as exactly 1) and far terrain in front of it.
+                if (!underwater && (h.a > 0.999) != isSky) keep = 0.0;
                 // Water is denser and animated: clamp old radiance to avoid dragging bright beams through shadows.
                 float limit = underwater ? 0.12 : 0.06;
                 float3 old = clamp(h.rgb, max(lit - limit, 0.0), lit + limit);
