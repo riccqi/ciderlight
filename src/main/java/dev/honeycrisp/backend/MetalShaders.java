@@ -1168,14 +1168,12 @@ public final class MetalShaders {
             if (models == null || models == this.foliageModels) {
                 return;
             }
-            // Every sprite used by a waving block's models (all states, a few random variants).
+            // Every sprite used by a waving block's models (all states, a few random variants). Built with waving off too:
+            // terrain lighting tells foliage from other tinted blocks (grass blocks) by it.
             Map<TextureAtlasSprite, Byte> sprites = new HashMap<>();
             List<BlockStateModelPart> parts = new ArrayList<>();
             Direction[] sides = {null, Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
             for (Block block : BuiltInRegistries.BLOCK) {
-                if (!WAVING) {
-                    break;
-                }
                 for (BlockState state : block.getStateDefinition().getPossibleStates()) {
                     byte kind = foliageKind(state);
                     if (kind == 0) {
