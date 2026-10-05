@@ -1,11 +1,11 @@
-# Honeycrisp
+# Ciderlight
 
 A Fabric mod for Minecraft Java **26.3** that adds a native **Apple Metal** rendering backend and a
 built-in, Metal-native shader pipeline (sun lighting, real-time shadows, light shafts, color grading).
 
 Minecraft 26.3 split its renderer into swappable backends ("renderpearl": OpenGL and Vulkan).
-Honeycrisp adds a third backend that talks to Metal directly through a small Objective-C bridge
-(`src/main/native/honeycrisp.m`) called via Java's FFM API. Minecraft's GLSL shaders are compiled
+Ciderlight adds a third backend that talks to Metal directly through a small Objective-C bridge
+(`src/main/native/ciderlight.m`) called via Java's FFM API. Minecraft's GLSL shaders are compiled
 to SPIR-V by the game, then translated to Metal Shading Language with SPIRV-Cross, so vanilla
 rendering, resource packs and core-shader packs keep working.
 
@@ -14,9 +14,9 @@ rendering, resource packs and core-shader packs keep working.
 | Configuration                    | Median FPS | 1% low |
 |----------------------------------|-----------:|-------:|
 | Vanilla OpenGL                   |       95.4 |   26.5 |
-| Honeycrisp, shaders off          |      215.7 |  109.2 |
-| Honeycrisp, shaders on           |      191.9 |  126.5 |
-| Honeycrisp, shaders on, raining  |      160.9 |  103.1 |
+| Ciderlight, shaders off          |      215.7 |  109.2 |
+| Ciderlight, shaders on           |      191.9 |  126.5 |
+| Ciderlight, shaders on, raining  |      160.9 |  103.1 |
 
 Reproduce with `./gradlew runClient -Pworld=<save> -Pbench=20` (add `-Pvanilla` or `-Pnoshaders`).
 
@@ -75,7 +75,7 @@ Enabled by default. Written for this backend rather than ported from an OptiFine
   do not disappear above the low mist. A forward-plus-broad scattering phase makes morning/evening beams
   visible from oblique angles, with subdued fog ambient fill to preserve their contrast. The air around
   the camera is four times as dense, fading over 40 blocks, so nearby scenery sits in mist without the distance whiting out
-  (`honeycrisp.fogNear`, `honeycrisp.fogNearRange`). Further out the air takes on the colour of the sky behind it (aerial perspective), so
+  (`ciderlight.fogNear`, `ciderlight.fogNearRange`). Further out the air takes on the colour of the sky behind it (aerial perspective), so
   distant hills fade into the pale horizon in layers rather than into a dark blue veil; rays into the open sky scatter
   the sky's own colour, so the fog does not grey it. The range follows the render distance, with a
   separate distant shadow cascade covering all of it (2048², or 4096² beyond 320 blocks), refreshed every four frames
@@ -148,7 +148,7 @@ Enabled by default. Written for this backend rather than ported from an OptiFine
   grade and vignette, using Apple-GPU framebuffer fetch so the scene never leaves tile memory. Vanilla's round
   blob shadow under entities is skipped.
 
-These shaders are Metal-only: they need the Honeycrisp backend's draw capture and composite pass, so they do
+These shaders are Metal-only: they need the Ciderlight backend's draw capture and composite pass, so they do
 not run on the OpenGL or Vulkan backends and are not an Iris/OptiFine pack.
 
 **Quality.** On phone-class GPUs (the A-series chip in the MacBook Neo) the shaders run at low quality: a 2048² near
@@ -156,22 +156,22 @@ shadow map and a 1024² distant one (2048² beyond 320 blocks), fog worked out a
 about 400, and 16-step fog, underwater and reflection marches with 12 screen-space shaft samples. The world (and the
 held item) is also drawn at two thirds of the window's resolution in each direction, about 45% of the pixels, and
 stretched over the window with a little sharpening; the HUD and menus are still drawn at full resolution.
-`honeycrisp.renderScale=<0.25–1>` sets that fraction at either quality. Every other GPU gets high quality, as described
+`ciderlight.renderScale=<0.25–1>` sets that fraction at either quality. Every other GPU gets high quality, as described
 above.
 Players choose in **Options > Video Settings > Quality & Performance > Shaders**: Off (the Metal renderer with
 Minecraft's own look), Low or High. Until they pick one, A-series GPUs get Low and the rest High. The choice is saved to
-`config/honeycrisp.properties` (`shaders=off|low|high`) and applies after a restart; Video Settings shows its
-"restart required" notice until then. `honeycrisp.quality=low` or `=high` and `honeycrisp.shaders=false` override the
+`config/ciderlight.properties` (`shaders=off|low|high`) and applies after a restart; Video Settings shows its
+"restart required" notice until then. `ciderlight.quality=low` or `=high` and `ciderlight.shaders=false` override the
 setting (dev client: `-Pquality=low`); the log names the quality in use.
-`honeycrisp.waterReflections=false` leaves water mirroring only the sky, at any quality.
+`ciderlight.waterReflections=false` leaves water mirroring only the sky, at any quality.
 
-Options (JVM `-D` flags): `honeycrisp.quality=low|high`, `honeycrisp.renderScale=0.67`, `honeycrisp.shaders=false`, `honeycrisp.shadowSize=2048`,
-`honeycrisp.shadowDistance=96`, `honeycrisp.fogDistance=256` (caps how far fog and its light shafts reach, 32–1024 blocks;
+Options (JVM `-D` flags): `ciderlight.quality=low|high`, `ciderlight.renderScale=0.67`, `ciderlight.shaders=false`, `ciderlight.shadowSize=2048`,
+`ciderlight.shadowDistance=96`, `ciderlight.fogDistance=256` (caps how far fog and its light shafts reach, 32–1024 blocks;
 by default they follow the render distance),
-`honeycrisp.fogNear=3` (extra mist density at the camera, 0 for none) and `honeycrisp.fogNearRange=40` (blocks it fades over), `honeycrisp.shadowHistory=false` (disable temporal shadow filtering for comparison),
-`honeycrisp.waving=false` (no waving foliage), `honeycrisp.wavingDebug=true` (colour terrain by foliage kind),
-`honeycrisp.ao=false` (disable ambient occlusion), `honeycrisp.aoDebug=true` (show the AO term alone),
-`honeycrisp.disable=true` (fall back to vanilla backends).
+`ciderlight.fogNear=3` (extra mist density at the camera, 0 for none) and `ciderlight.fogNearRange=40` (blocks it fades over), `ciderlight.shadowHistory=false` (disable temporal shadow filtering for comparison),
+`ciderlight.waving=false` (no waving foliage), `ciderlight.wavingDebug=true` (colour terrain by foliage kind),
+`ciderlight.ao=false` (disable ambient occlusion), `ciderlight.aoDebug=true` (show the AO term alone),
+`ciderlight.disable=true` (fall back to vanilla backends).
 
 Dev-client flags: `-Pvanilla`, `-Pnoshaders`, `-Pfullscreen`, `-Pvalidate` (Metal API validation), `-Ptrace`
 (dump one frame's passes and draws), `-Pbench=<s>`, `-PbenchScene` (sky test scene with pillars,
@@ -197,22 +197,22 @@ Two screenshots only compare pixel for pixel when they were taken with `-PbenchC
 the same frame rate (cap it with `maxFps` in `run/options.txt`): the haze drifts with the time of day on the wall, and
 the temporal filters settle slightly differently at different frame rates.
 
-Diagnostics are off in normal play. `-Dhoneycrisp.debug=true` (dev client: `-Pdebug`) traces the first 30 seconds after
-joining a world in the game log (lines starting `Honeycrisp trace`): frame times, time spent waiting for the GPU or the
+Diagnostics are off in normal play. `-Dciderlight.debug=true` (dev client: `-Pdebug`) traces the first 30 seconds after
+joining a world in the game log (lines starting `Ciderlight trace`): frame times, time spent waiting for the GPU or the
 display, shader compiles, uploads, GPU time per pass (and the slowest frame's breakdown), how long frames stayed on screen,
 and the size of the section list with how much of it is there for shadows only; it also logs the details of shader
-setup. `-Dhoneycrisp.hitchTraceSeconds=<s>` changes the length of the trace. `-PautoTurn=<degrees per second>` and
+setup. `-Dciderlight.hitchTraceSeconds=<s>` changes the length of the trace. `-PautoTurn=<degrees per second>` and
 `-PautoWalk=true` move the player for such a trace.
 
 With vsync on, frames go on screen as soon as they are done, up to the display's refresh rate; Max Framerate caps them
-as usual (60 on a 120 Hz display gives an even rate). `-Dhoneycrisp.framePacing=true` instead picks an even rate
+as usual (60 on a 120 Hz display gives an even rate). `-Dciderlight.framePacing=true` instead picks an even rate
 automatically from what the display can show (on a ProMotion display 120, 80 or 60 fps) and what frames cost.
 
 ## Building
 
-The [GitHub Actions build](https://github.com/riccqi/honeycrisp/actions/workflows/build.yml) builds the Java code and
+The [GitHub Actions build](https://github.com/riccqi/ciderlight/actions/workflows/build.yml) builds the Java code and
 the native library from source on macOS. Each successful run provides a JAR, its SHA-256 checksum, the source commit,
-and the build environment. The bundled `natives/libhoneycrisp.dylib` is compiled from `src/main/native/honeycrisp.m`
+and the build environment. The bundled `natives/libciderlight.dylib` is compiled from `src/main/native/ciderlight.m`
 by the `buildNative` Gradle task; it is not a downloaded third-party binary. Release uploads should use the JAR from
 that run without rebuilding it, so reviewers can compare the uploaded file directly with the automation artifact.
 GPU shader regressions run locally with `python3 tests/check_shaders.py` because they require a Metal device.
@@ -239,8 +239,8 @@ python3 tests/check_shaders.py  # compile all shader variants and run GPU regres
 ## Installing
 
 1. Install Fabric Loader for Minecraft 26.3 (https://fabricmc.net/use/installer/).
-2. Copy `build/libs/honeycrisp-0.1.1.jar` into `~/Library/Application Support/minecraft/mods/`.
-3. Launch the Fabric profile. Honeycrisp is client-side only, so it works on any server.
+2. Copy `build/libs/ciderlight-0.1.5.jar` into `~/Library/Application Support/minecraft/mods/`.
+3. Launch the Fabric profile. Ciderlight is client-side only, so it works on any server.
 4. Optional: add `--enable-native-access=ALL-UNNAMED` to the profile's JVM arguments to silence
    Java's native-access warning.
 
@@ -261,5 +261,5 @@ python3 tests/check_shaders.py  # compile all shader variants and run GPU regres
 ## License
 
 Copyright 2026 Richard Qi. Licensed under the [Apache License, Version 2.0](LICENSE): you may use, modify and
-redistribute Honeycrisp, including in forks, as long as you keep the copyright and [NOTICE](NOTICE) file, include the
+redistribute Ciderlight, including in forks, as long as you keep the copyright and [NOTICE](NOTICE) file, include the
 licence, and mark the files you changed.

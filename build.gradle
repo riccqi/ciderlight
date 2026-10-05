@@ -2,7 +2,7 @@ plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
-base { archivesName = "honeycrisp" }
+base { archivesName = "ciderlight" }
 
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
@@ -11,7 +11,7 @@ dependencies {
 
 // Objective-C bridge to Metal, compiled with the system clang and bundled in the jar.
 def nativeSrc = file("src/main/native")
-def nativeOut = layout.buildDirectory.file("native/libhoneycrisp.dylib")
+def nativeOut = layout.buildDirectory.file("native/libciderlight.dylib")
 tasks.register('buildNative', Exec) {
 	inputs.dir nativeSrc
 	outputs.file nativeOut
@@ -20,7 +20,7 @@ tasks.register('buildNative', Exec) {
 		'-mmacosx-version-min=15.0', '-Wall', '-Wno-unused-function',
 		'-framework', 'Metal', '-framework', 'QuartzCore', '-framework', 'Foundation', '-framework', 'AppKit',
 		'-o', nativeOut.get().asFile.absolutePath,
-		"${nativeSrc}/honeycrisp.m"
+		"${nativeSrc}/ciderlight.m"
 }
 
 processResources {
@@ -42,14 +42,14 @@ java {
 
 // Exercise binding-cache invalidation and compare cached encoder state against uncached state.
 tasks.register('compileBindingChecks', JavaCompile) {
-	source 'src/main/java/dev/honeycrisp/backend/MetalBindingCache.java', 'tests/java'
+	source 'src/main/java/dev/ciderlight/backend/MetalBindingCache.java', 'tests/java'
 	classpath = files()
 	destinationDirectory = layout.buildDirectory.dir('binding-checks')
 }
 tasks.register('checkBackendBindings', JavaExec) {
 	dependsOn 'compileBindingChecks'
 	classpath = files(layout.buildDirectory.dir('binding-checks'))
-	mainClass = 'dev.honeycrisp.backend.MetalBindingCacheChecks'
+	mainClass = 'dev.ciderlight.backend.MetalBindingCacheChecks'
 	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
 }
 tasks.named('check') { dependsOn 'checkBackendBindings' }
@@ -63,7 +63,7 @@ tasks.register('compileShadowCasterChecks', JavaCompile) {
 tasks.register('checkShadowCasters', JavaExec) {
 	dependsOn 'compileShadowCasterChecks'
 	classpath = sourceSets.main.runtimeClasspath + files(layout.buildDirectory.dir('shadow-caster-test-classes'))
-	mainClass = 'dev.honeycrisp.backend.ShadowCasterChecks'
+	mainClass = 'dev.ciderlight.backend.ShadowCasterChecks'
 	javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
 }
 tasks.named('check') { dependsOn 'checkShadowCasters' }
@@ -73,7 +73,7 @@ loom {
 		client {
 			vmArgs "--enable-native-access=ALL-UNNAMED"
 			if (project.hasProperty("vanilla")) {
-				vmArgs "-Dhoneycrisp.disable=true"
+				vmArgs "-Dciderlight.disable=true"
 			}
 			if (project.hasProperty("validate")) {
 				environmentVariable "MTL_DEBUG_LAYER", "1"
@@ -81,30 +81,30 @@ loom {
 				environmentVariable "MTL_SHADER_VALIDATION", "0"
 			}
 			if (project.hasProperty("shaderDebug")) {
-				vmArgs "-Dhoneycrisp.shaderDebug=true"
+				vmArgs "-Dciderlight.shaderDebug=true"
 			}
 			if (project.hasProperty("nocasters")) {
-				vmArgs "-Dhoneycrisp.shadowCasters=false"
+				vmArgs "-Dciderlight.shadowCasters=false"
 			}
 			if (project.hasProperty("noshaders")) {
-				vmArgs "-Dhoneycrisp.shaders=false"
+				vmArgs "-Dciderlight.shaders=false"
 			}
 			if (project.hasProperty("debug")) {
-				vmArgs "-Dhoneycrisp.debug=true"
+				vmArgs "-Dciderlight.debug=true"
 			}
 			if (project.hasProperty("trace")) {
-				vmArgs "-Dhoneycrisp.trace=true"
+				vmArgs "-Dciderlight.trace=true"
 			}
 			for (String key : ["benchTime", "benchYaw", "benchPitch", "benchWeather", "benchShot", "benchShot2", "benchSequence", "benchX", "benchZ", "benchCamX", "benchCamY", "benchMove", "benchWalk", "benchSprint", "benchJump", "benchTrees", "benchWater", "benchReflection", "benchFog", "benchGlass", "benchFoliage", "benchDayCycle", "vlHistory", "shadowHistory", "waving", "wavingDebug", "ao", "aoDebug", "gpuProfile", "framesInFlight", "benchEyeY", "fogNear", "fogNearRange", "benchLightning", "benchItem", "benchThirdPerson", "benchTorch", "benchBreak", "benchFlatWorld", "dumpShaders", "shadowCull", "mainCull", "hitchTraceSeconds", "autoTurn", "autoWalk", "casterMask", "casterSweep", "quality", "shadowSize", "waterReflections", "renderScale", "benchPos", "benchRun", "benchClock", "framePacing"]) {
 				if (project.hasProperty(key)) {
-					vmArgs "-Dhoneycrisp." + key + "=" + project.property(key)
+					vmArgs "-Dciderlight." + key + "=" + project.property(key)
 				}
 			}
 			if (project.hasProperty("benchScene")) {
-				vmArgs "-Dhoneycrisp.benchScene=true"
+				vmArgs "-Dciderlight.benchScene=true"
 			}
 			if (project.hasProperty("bench")) {
-				vmArgs "-Dhoneycrisp.bench=" + project.property("bench")
+				vmArgs "-Dciderlight.bench=" + project.property("bench")
 			}
 			if (project.hasProperty("fullscreen")) {
 				programArgs "--fullscreen"
@@ -123,6 +123,6 @@ loom {
 // Copies the built jar into the launcher's mods folder: `./gradlew installMod`, then press Play on the Fabric profile.
 tasks.register('installMod', Copy) {
 	dependsOn 'build'
-	from layout.buildDirectory.file("libs/honeycrisp-${version}.jar")
+	from layout.buildDirectory.file("libs/ciderlight-${version}.jar")
 	into "${System.getProperty('user.home')}/Library/Application Support/minecraft/mods"
 }

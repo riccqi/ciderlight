@@ -9,7 +9,7 @@ static void require(BOOL condition, NSString *message) {
 }
 
 static NSString *source(NSString *name) {
-    NSString *path = [@"src/main/resources/assets/honeycrisp/shaders" stringByAppendingPathComponent:name];
+    NSString *path = [@"src/main/resources/assets/ciderlight/shaders" stringByAppendingPathComponent:name];
     NSString *s = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL];
     require(s != nil, [@"Cannot read " stringByAppendingString:path]);
     for (NSString *header in @[@"frame.metal", @"shadow.metal", @"water.metal", @"reflection.metal", @"water_surface.metal", @"atmosphere.metal", @"foliage.metal", @"ao.metal"]) {

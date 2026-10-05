@@ -1,4 +1,4 @@
-name: Build Honeycrisp
+name: Build Ciderlight
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
       - name: Record source revision and checksums
         run: |
           mkdir -p build/release
-          cp build/libs/honeycrisp-*.jar build/release/
+          cp build/libs/ciderlight-*.jar build/release/
           git rev-parse HEAD > build/release/SOURCE_COMMIT.txt
           sw_vers > build/release/BUILD_ENVIRONMENT.txt
           clang --version >> build/release/BUILD_ENVIRONMENT.txt
@@ -34,7 +34,7 @@ jobs:
           shasum -a 256 *.jar > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: honeycrisp-${{ github.sha }}
+          name: ciderlight-${{ github.sha }}
           path: build/release/
           if-no-files-found: error
           retention-days: 90

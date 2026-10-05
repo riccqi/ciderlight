@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "honeycrisp",
+  "id": "ciderlight",
   "version": "${version}",
-  "name": "Honeycrisp",
+  "name": "Ciderlight",
   "description": "Native Apple Metal rendering backend for Minecraft.",
   "authors": ["Richard Qi"],
   "contact": {
-    "sources": "https://github.com/riccqi/honeycrisp",
-    "issues": "https://github.com/riccqi/honeycrisp/issues"
+    "sources": "https://github.com/riccqi/ciderlight",
+    "issues": "https://github.com/riccqi/ciderlight/issues"
   },
   "license": "Apache-2.0",
   "environment": "client",
   "entrypoints": {},
-  "mixins": ["honeycrisp.mixins.json"],
+  "mixins": ["ciderlight.mixins.json"],
   "depends": { "fabricloader": ">=0.19.0", "minecraft": "26.3", "java": ">=25" }
 }

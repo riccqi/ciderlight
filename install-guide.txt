@@ -1,13 +1,13 @@
-HONEYCRISP: HOW TO INSTALL
+CIDERLIGHT: HOW TO INSTALL
 
 You need: an Apple Silicon Mac (M1 or newer) on macOS 15 or later, and Minecraft Java Edition.
-You only need the one file: honeycrisp-0.1.1.jar. Don't unzip it, and don't double-click it.
+You only need the one file: ciderlight-0.1.5.jar. Don't unzip it, and don't double-click it.
 
 
 OPTION A: Modrinth App (easiest)
 1. Download the Modrinth App from modrinth.com/app and sign in with your Microsoft account.
 2. Make a new instance: Minecraft 26.3, loader Fabric.
-3. Open the instance and drag honeycrisp-0.1.1.jar onto its content page.
+3. Open the instance and drag ciderlight-0.1.5.jar onto its content page.
 4. Press Play.
 
 

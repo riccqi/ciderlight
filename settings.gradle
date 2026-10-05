@@ -10,4 +10,4 @@ pluginManagement {
 }
 
 // Should match your modid
-rootProject.name = 'honeycrisp'
+rootProject.name = 'ciderlight'

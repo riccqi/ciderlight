@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-with tempfile.TemporaryDirectory(prefix="honeycrisp-shader-checks-") as tmp:
+with tempfile.TemporaryDirectory(prefix="ciderlight-shader-checks-") as tmp:
     binary = str(Path(tmp) / "check-shaders")
     subprocess.run(["clang", "-fobjc-arc", "-O2", "-framework", "Metal",
                     "-framework", "Foundation", str(root / "tests/check_shaders.m"), "-o", binary], check=True)
