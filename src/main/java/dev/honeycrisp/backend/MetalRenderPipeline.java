@@ -336,6 +336,7 @@ public final class MetalRenderPipeline implements BackendRenderPipeline, Destroy
                 MetalRenderPipeline pipeline = new MetalRenderPipeline(device, info, lib, "particle_vertex", lib, "particle_fragment", uniformStages, 0);
                 pipeline.stateFor(info.depthStencilState() != null);
                 pipeline.prebuildVariants();
+                device.shaders().prebuildFor(pipeline);
                 return pipeline;
             } catch (IllegalStateException e) {
                 LOGGER.warn("Honeycrisp: particles keep vanilla lighting, the particle shader could not be used for {}: {}", info.name(), e.getMessage());

@@ -493,12 +493,17 @@ public final class MetalShaders {
 
     /**
      * Starts building what draws with this pipeline will need from the shader pipeline: the shadow library and the
-     * terrain shadow pass for a terrain pipeline, the shadow and block-light passes for one that draws mobs. Called on
-     * the thread that compiles the pipeline, before anything draws with it.
+     * terrain shadow pass for a terrain pipeline, the shadow and block-light passes for one that draws mobs, the
+     * block-light pass for the particle pipeline. Called on the thread that compiles the pipeline, before anything draws
+     * with it.
      */
     void prebuildFor(final MetalRenderPipeline pipeline) {
         int[] descriptor = pipeline.shadowDescriptor();
-        if (!ENABLED || descriptor == null || pipeline.isLitParticle()) {
+        if (!ENABLED || descriptor == null) {
+            return;
+        }
+        if (pipeline.isLitParticle()) {
+            this.prebuild(entityLightKey(true, descriptor), () -> this.buildEntityLightState(true, descriptor));
             return;
         }
         int kind = pipeline.terrainKind();
