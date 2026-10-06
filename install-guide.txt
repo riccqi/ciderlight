@@ -39,7 +39,7 @@ In the game, go to Options > Video Settings. The first button under the graphics
 The change applies after you quit and restart the game.
 
 Which one to pick: Low on A-series or lower-tier M chips, High on everything else.
-A-series Macs start on Low by themselves; all others start on High.
+A-series Macs and the plain M1 and M2 start on Low by themselves; all others start on High.
 
 
 TIPS

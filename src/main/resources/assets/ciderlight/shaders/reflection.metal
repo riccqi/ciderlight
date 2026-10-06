@@ -47,12 +47,13 @@ static float4 reflection_probe(depth2d<float> depth, float2 coefficients, float4
 // Steps grow by REFLECTION_STEP_GROWTH, so REFLECTION_STEPS still reach 128 blocks from the shortest first step; a ray re-examines
 // at most REFLECTION_CROSSINGS places where it passes behind something, and looks up to 4 << (REFLECTION_SIDESTEPS - 1)
 // pixels to either side of an object in front for the scene beside it.
-// Low quality (Quality.LOW) takes two thirds of the steps, growing faster so they reach as far.
+// Low quality (Quality.LOW) takes half the steps, growing faster so they reach as far, and looks behind only the first
+// thing a ray passes behind, without searching beside it: at most about a quarter of High's depth reads.
 #ifdef MC_QUALITY_LOW
-constant int REFLECTION_STEPS = 16;
-constant float REFLECTION_STEP_GROWTH = 1.45;
-constant int REFLECTION_CROSSINGS = 2;
-constant int REFLECTION_SIDESTEPS = 4;
+constant int REFLECTION_STEPS = 12;
+constant float REFLECTION_STEP_GROWTH = 1.6;
+constant int REFLECTION_CROSSINGS = 1;
+constant int REFLECTION_SIDESTEPS = 0;
 #else
 constant int REFLECTION_STEPS = 24;
 constant float REFLECTION_STEP_GROWTH = 1.25;

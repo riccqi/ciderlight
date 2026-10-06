@@ -495,8 +495,11 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             // Seen from steeply above, water reflects about 2% of what is over it: whether that is the traced scene
             // or the sky cannot be told apart, so the ray is only traced where the reflection shows. The hand-over is
             // spread over a wide range of angles: a narrow one shows as a line across the water when looking down.
-#ifdef MC_NO_WATER_TRACE
+            // Low quality traces only the shallower angles, where the reflection is brightest.
+#if defined(MC_NO_WATER_TRACE)
             float traced = 0.0;
+#elif defined(MC_QUALITY_LOW)
+            float traced = smoothstep(0.04, 0.12, mirror);
 #else
             float traced = smoothstep(0.025, 0.09, mirror);
 #endif
