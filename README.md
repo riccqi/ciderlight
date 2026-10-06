@@ -58,7 +58,7 @@ JVM `-D` overrides: `ciderlight.quality=low|high`, `ciderlight.shaders=false`, `
 2. Copy `ciderlight-0.1.5.jar` into `~/Library/Application Support/minecraft/mods/`.
 3. Launch the Fabric profile. Ciderlight is client-side only, so it works on any server.
 
-Requires macOS on Apple Silicon. On other machines the mod turns itself off and the game uses its default renderer.
+Requires an Apple Silicon Mac on macOS 14 or later. On other machines the mod turns itself off and the game uses its default renderer.
 
 ## Building
 

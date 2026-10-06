@@ -27,11 +27,11 @@ public class MetalBackend implements GpuBackend {
             // Also the case for an Intel Java running under Rosetta on an Apple Silicon Mac.
             return "it needs an Apple Silicon Mac and an arm64 Java (this Java is " + arch + ")";
         }
-        // The native library is built for macOS 15 and newer (-mmacosx-version-min in build.gradle).
+        // The native library is built for macOS 14 and newer (-mmacosx-version-min in build.gradle).
         String version = System.getProperty("os.version", "");
         try {
-            if (Integer.parseInt(version.split("\\.")[0]) < 15) {
-                return "it needs macOS 15 or newer (this is macOS " + version + ")";
+            if (Integer.parseInt(version.split("\\.")[0]) < 14) {
+                return "it needs macOS 14 or newer (this is macOS " + version + ")";
             }
         } catch (NumberFormatException e) {
             // Unknown version string: try anyway, loadLibrary still falls back if the library will not load.

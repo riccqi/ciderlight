@@ -17,7 +17,7 @@ tasks.register('buildNative', Exec) {
 	outputs.file nativeOut
 	doFirst { nativeOut.get().asFile.parentFile.mkdirs() }
 	commandLine 'clang', '-dynamiclib', '-fobjc-arc', '-O2', '-arch', 'arm64',
-		'-mmacosx-version-min=15.0', '-Wall',
+		'-mmacosx-version-min=14.0', '-Wall',
 		'-framework', 'Metal', '-framework', 'QuartzCore', '-framework', 'Foundation', '-framework', 'AppKit',
 		'-o', nativeOut.get().asFile.absolutePath,
 		"${nativeSrc}/ciderlight.m"

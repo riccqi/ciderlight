@@ -1,6 +1,6 @@
 CIDERLIGHT: HOW TO INSTALL
 
-You need: an Apple Silicon Mac (M1 or newer) on macOS 15 or later, and Minecraft Java Edition.
+You need: an Apple Silicon Mac (M1 or newer) on macOS 14 or later, and Minecraft Java Edition.
 You only need the one file: ciderlight-0.1.5.jar. Don't unzip it, and don't double-click it.
 
 

@@ -749,7 +749,14 @@ EXPORT void *mc_library_create(void *ctxPtr, const char *source, char *err, int 
         MCContext *ctx = BORROW(MCContext *, ctxPtr);
         MTLCompileOptions *opts = [MTLCompileOptions new];
         opts.languageVersion = MTLLanguageVersion3_0;
-        opts.mathMode = MTLMathModeFast;
+        if (@available(macOS 15, *)) {
+            opts.mathMode = MTLMathModeFast;
+        } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            opts.fastMathEnabled = YES;
+#pragma clang diagnostic pop
+        }
         NSError *error = nil;
         id<MTLLibrary> lib = [ctx.device newLibraryWithSource:[NSString stringWithUTF8String:source] options:opts error:&error];
         if (lib == nil) {

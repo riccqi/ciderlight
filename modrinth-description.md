@@ -4,7 +4,7 @@
 
 Ciderlight adds an Apple Metal renderer to Minecraft 26.3, next to the game's own OpenGL and Vulkan ones. On a Mac it runs the game at about double the frame rate of vanilla, and adds built-in shaders you can use without OptiFine or Iris.
 
-> **Requires an Apple Silicon Mac (M1 or newer) on macOS 15 or later.**
+> **Requires an Apple Silicon Mac (M1 or newer) on macOS 14 or later.**
 > On any other computer, Ciderlight switches itself off and the game runs normally.
 
 ## Performance
