@@ -57,7 +57,7 @@ Ciderlight doesn't need Fabric API. It is client-side only, so it works on any s
 
 ## Good to know
 
-- It hasn't been tested with other rendering mods (Sodium, Iris and similar). Try it on its own first.
+- It doesn't work with Sodium, or with mods that need it such as Iris and Sodium Extra: Fabric won't load them together. It hasn't been tested with other rendering mods, so try it on its own first.
 - OptiFine and Iris shader packs aren't supported. Ciderlight has its own shaders instead.
 - Turn it off without uninstalling by adding `-Dciderlight.disable=true` to the JVM arguments.
 
