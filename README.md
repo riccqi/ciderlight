@@ -80,6 +80,9 @@ from source; releases use that build's JAR unchanged.
 - Entities in caves can be darkened by the sun shadow test.
 - No bloom/HDR.
 - OptiFine/Iris shader packs (e.g. Complementary) are not supported.
+- Sodium (and add-ons that need it, such as Iris and Sodium Extra) can't run alongside Ciderlight: Sodium's
+  chunk renderer uses a multi-draw call the Metal backend doesn't provide. Fabric will refuse to launch and list them as incompatible; this is intentional.
+  Remove them from the mods folder.
 
 ## License
 
