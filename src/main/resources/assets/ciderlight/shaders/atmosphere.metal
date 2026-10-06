@@ -87,7 +87,7 @@ static float3 atmosphere_sky(constant FrameData &frame, float3 direction) {
     float3 night = mix(float3(0.004, 0.009, 0.026), float3(0.028, 0.040, 0.075), horizon);
     float3 daylight = mix(dayZenith, dayHorizon, haze);
     // Towards the sun the haze glows bright and warm.
-    daylight += float3(0.12, 0.085, 0.05) * pow(towardSun, 2.0) * haze * (0.35 + 0.65 * low);
+    daylight += float3(0.12, 0.085, 0.05) * pow(towardSun, 2.0) * haze * (0.35 + 0.35 * low);
     float3 colour = mix(night, daylight, day);
     float sunset = twilight * horizon * (0.12 + 0.88 * pow(towardSun, 3.0));
     colour = mix(colour, float3(0.96, 0.42, 0.22), sunset * 0.8);

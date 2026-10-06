@@ -160,8 +160,9 @@ static AirVolume march_air(constant FrameData &frame, depth2d<float> nearMap, de
     // Far away the air takes on the colour of the sky behind it (aerial perspective): distant hills fade into the
     // pale horizon rather than into a dark blue veil. Nearby, the dimmer fill keeps shafts and shade contrasty.
     float3 skyBehind = atmosphere_sky(frame, V) * (skyRay ? 0.97 : 0.85);
-    // The low sun lights the mist most strongly (golden hour), and keeps doing so until it is at the horizon.
-    float3 direct = frame.sunColor.rgb * frame.sunDir.w * (moon ? 0.5 : 1.65 * (1.0 + 0.1 * frame.airNear.z))
+    // The low sun lights the mist most strongly (golden hour), and keeps doing so until it is at the horizon, but
+    // somewhat less than at noon: looking towards it, the haze around the sun would glare.
+    float3 direct = frame.sunColor.rgb * frame.sunDir.w * (moon ? 0.5 : 1.65 * (1.0 - 0.2 * frame.airNear.z))
                   * smoothstep(0.0, 0.04, frame.sunDir.y) * air_phase(dot(V, frame.sunDir.xyz));
     bool lit = any(direct > 0.0);
     // A lightning bolt shines through the air too, with its own shadows: shafts between the trees for a moment.
@@ -478,7 +479,8 @@ fragment float4 composite_fragment(VOut in [[stage_in]],
             float shafts = sky / total * falloff * falloff;
             // Additive, so the rays still glow over the already bright sky around the sun.
             float3 rayCol = moon ? float3(0.55, 0.65, 0.95) : frame.sunColor.rgb * float3(1.0, 0.86, 0.64);
-            color += rayCol * shafts * 0.10 * (1.0 + 0.2 * frame.airNear.z) * shaftStrength * smoothstep(0.1, 0.6, frame.fogParams.x);
+            // Weaker at golden hour: with the sun low, the shafts land on the already bright horizon and glare.
+            color += rayCol * shafts * 0.10 * (1.0 - 0.45 * frame.airNear.z) * shaftStrength * smoothstep(0.1, 0.6, frame.fogParams.x);
         }
     }
 

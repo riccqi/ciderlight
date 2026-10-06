@@ -493,11 +493,12 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             // mostly seen at, so the banks and sky show in it as they do on a calm river.
             float mirror = min(0.02 + 0.98 * pow(1.0 - saturate(dot(-V, nn)), 3.5), 0.92);
             // Seen from steeply above, water reflects about 2% of what is over it: whether that is the traced scene
-            // or the sky cannot be told apart, so the ray is only traced where the reflection shows.
+            // or the sky cannot be told apart, so the ray is only traced where the reflection shows. The hand-over is
+            // spread over a wide range of angles: a narrow one shows as a line across the water when looking down.
 #ifdef MC_NO_WATER_TRACE
             float traced = 0.0;
 #else
-            float traced = smoothstep(0.03, 0.06, mirror);
+            float traced = smoothstep(0.025, 0.09, mirror);
 #endif
             if (traced > 0.0) {
                 ReflectionHit hit = trace_reflection(opaqueDepth, vp, in.worldPos + n * 0.03, R);

@@ -128,7 +128,9 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
             // Fade towards the screen edges, where the next ray would leave the screen and find nothing. A mirror image
             // on level water sits straight below its source, so hits near the left and right edges are still good data:
             // only a thin margin is faded there, or the reflection would stop well short of the sides of the view.
-            const float2 margin = float2(0.015, 0.08);
+            // Looking down at water, the rays run off the top of the screen: a wide margin there lets the mirrored
+            // scene thin out into the sky colour instead of ending at a hard line.
+            const float2 margin = float2(0.015, 0.2);
             float2 edge = smoothstep(float2(0.0), margin, refined.xy) * smoothstep(float2(0.0), margin, 1.0 - refined.xy);
             float confidence = edge.x * edge.y * (1.0 - smoothstep(96.0, 128.0, high));
             if (refined.z <= thickness) {
@@ -137,8 +139,11 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
             // The ray passed behind something (a leaf canopy, a trunk seen from its far side). Keep marching to what
             // lies beyond it: giving up here shows the sky colour through every tree as bright speckle. If nothing
             // else is found, an occluder only a few blocks in front of the ray is a better guess than the sky; one far
-            // in front (a pillar between the camera and the water) is still rejected.
-            if (fallback.confidence == 0.0) {
+            // in front (a pillar between the camera and the water) is still rejected, and so is anything nearer the
+            // camera than the water itself: a ray heading away from the camera cannot reach it, so a tree standing
+            // between the camera and the water never shows in it.
+            bool foreground = clipStep.w > 0.0 && hitClip.w - refined.z < clipOrigin.w;
+            if (fallback.confidence == 0.0 && !foreground) {
                 fallback = ReflectionHit{refined.xy, confidence * (1.0 - smoothstep(1.0, 8.0, refined.z)), high};
             }
             if (++refinements >= REFLECTION_CROSSINGS) return fallback;

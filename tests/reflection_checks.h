@@ -26,9 +26,10 @@ static void checkReflections(id<MTLDevice> device, NSString *defines) {
         }
         simd_float4x4 vp = simd_mul(projection,bob), inv = simd_inverse(vp);
         simd_float3 eye = simd_mul(simd_inverse(bob),(simd_float4){0,0,0,1}).xyz;
-        for (int scene = 0; scene < 8; scene++) {
+        for (int scene = 0; scene < 9; scene++) {
             // 0 sky, 1 real wall, 2 foreground silhouette, 3 legitimate nearby object,
-            // 4 distant wall, 5 initially occluded, 6 sloping wall, 7 floor behind water.
+            // 4 distant wall, 5 initially occluded, 6 sloping wall, 7 floor behind water,
+            // 8 a tree just nearer the camera than the water (only a few blocks in front of the ray).
             simd_float3 normal = scene == 6 ? (simd_float3){0,0.5f,1} :
                                  scene == 7 ? (simd_float3){0,1,0} : (simd_float3){0,0,1};
             float plane = scene == 4 ? -70 : scene == 7 ? -2.4f : -20;
@@ -45,6 +46,7 @@ static void checkReflections(id<MTLDevice> device, NSString *defines) {
                 if ((scene == 2 && v > 0.45f) || scene == 5) {
                     d = -projection.columns[2].z + projection.columns[3].z / 2.0f;
                 }
+                if (scene == 8 && v > 0.45f) d = -projection.columns[2].z + projection.columns[3].z / 7.0f;
                 pixels[y*size+x] = fmaxf(d,0);
             }
             MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float width:size height:size mipmapped:NO];
@@ -74,5 +76,5 @@ static void checkReflections(id<MTLDevice> device, NSString *defines) {
         }
     }
     printf("%s", defines.length > 0 ? "Low quality: " : "");
-    puts("40 reflection scenes pass: foreground rejection, real near/far hits, sloped surfaces, sky, floor, and bobbed finite/infinite projections, and orthographic fallback.");
+    puts("45 reflection scenes pass: foreground rejection, trees nearer than the water, real near/far hits, sloped surfaces, sky, floor, and bobbed finite/infinite projections, and orthographic fallback.");
 }
