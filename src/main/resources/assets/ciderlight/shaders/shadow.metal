@@ -23,13 +23,6 @@ static float3 material_transmission(float4 albedo, float3 vertexColor, bool wate
     return mix(neutral, coloured, dye);
 }
 
-// Each channel blends ambient shade towards sunlight by how much of that channel gets through. Light under
-// stained glass keeps the sky light arriving from around it, so its shadow is a soft tint rather than a flat
-// patch of the dye colour.
-static float3 filtered_surface_light(float3 ambient, float3 sunlight, float3 direct) {
-    return mix(ambient, sunlight, saturate(direct));
-}
-
 // Translucent casters further than `farGap` (in shadow depth) in front of the receiver are left out.
 static float3 shadow_transmission(texture2d<float> colorMap, float2 uv, float receiverDepth, float farGap = 2.0) {
     // Filter the depth-tested colours, never the blocker depths themselves: an interpolated depth would

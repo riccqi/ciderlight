@@ -1,3 +1,11 @@
+// Total air density at a world position, as the volumetric fog march sees it (composite.metal).
+static float3 air_density_layers(constant FrameData &frame, float3 world) {
+    return air_density_layers(air_medium(frame), AirHashNoise{}, world);
+}
+
+static float air_density(constant FrameData &frame, float3 world) {
+    return dot(air_density_layers(frame, world), float3(1.0));
+}
 
 kernel void shader_checks(constant FrameData &frame [[buffer(0)]], device float *out [[buffer(1)]],
                           depth2d<float> depth [[texture(0)]], texture2d<float> color [[texture(1)]],
@@ -118,7 +126,6 @@ kernel void air_checks(constant FrameData *frames [[buffer(0)]], device float4 *
     out[46] = float4(air_visibility(frames[0], open, open, compare, red, blue, clear, float3(0)), 0);
     out[47] = float4(air_visibility(frames[0], open, open, compare, red, blue, clear, float3(180,0,0)), 0);
     out[48] = float4(air_visibility(frames[0], open, open, compare, red, blue, clear, float3(0,0,-150)), 0);
-    out[49] = float4(filtered_surface_light(float3(0.6), float3(1), float3(0.9,0.05,0.03)), 0);
     out[50] = float4(water_visibility(frames[0], open, compare, red, clear, float3(0), float3(0)), 0);
     out[51] = float4(water_visibility(frames[0], blocked, compare, red, clear, float3(0), float3(0)), 0);
     AirVolume tinted = march_air(frames[0], open, open, compare, red, red, clear, open, float3(0), float3(1,0,0), 20, 0.5);

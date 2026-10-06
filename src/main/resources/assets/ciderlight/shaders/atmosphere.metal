@@ -69,14 +69,6 @@ static float3 air_density_layers(AirMedium medium, Noise noise, float3 world) {
     return float3(ground, veil, haze) * medium.scale;
 }
 
-static float3 air_density_layers(constant FrameData &frame, float3 world) {
-    return air_density_layers(air_medium(frame), AirHashNoise{}, world);
-}
-
-static float air_density(constant FrameData &frame, float3 world) {
-    return dot(air_density_layers(frame, world), float3(1.0));
-}
-
 // An inexpensive directional atmosphere palette, inspired by scattering rather than an HDR atmosphere solver.
 // Uses the actual solar elevation, so twilight stays continuous when the shadow light switches to the moon.
 static float3 atmosphere_sky(constant FrameData &frame, float3 direction) {

@@ -164,8 +164,6 @@ public final class MetalShaders {
         {-0.375F, -0.125F}, {0.125F, -0.375F}, {0.375F, 0.125F}, {-0.125F, 0.375F},
         {-0.375F, 0.375F}, {0.375F, -0.375F}, {0.125F, 0.125F}, {-0.125F, -0.125F}
     };
-    /** Size of the unused block in FrameData (frame.metal, `reserved`) that keeps the later offsets in place. */
-    private static final int SPRITE_MAX = 72;
     /** Ice sprites: drawn nearly opaque so the water underneath does not show through (listed after the shiny ones). */
     private static final String[] ICE_SPRITES = {"ice", "frosted_ice_0", "frosted_ice_1", "frosted_ice_2", "frosted_ice_3"};
     /** Sprites that are all flame: drawn at full brightness like a light source (listed after the ice ones). */
@@ -177,8 +175,9 @@ public final class MetalShaders {
     };
     /** Particle sprites that are all flame or molten: drawn at full brightness like the flames of blocks. */
     private static final String[] FLAME_PARTICLES = {"flame", "soul_fire_flame", "copper_fire_flame", "lava"};
-    private static final int SPRITE_OFFSET = 496;
-    private static final int WATER_OFFSET = SPRITE_OFFSET + SPRITE_MAX * 16;
+    /** The block of FrameData from airNear up to waterParams; its end (after `reserved` in frame.metal) fixes the later offsets. */
+    private static final int RESERVED_END = AIR_NEAR_OFFSET + 72 * 16;
+    private static final int WATER_OFFSET = RESERVED_END;
     private static final int FAR_MATRIX_OFFSET = WATER_OFFSET + 16;
     private static final int FAR_ANCHOR_OFFSET = FAR_MATRIX_OFFSET + 64;
     private static final int AIR_OFFSET = FAR_ANCHOR_OFFSET + 16;
@@ -1081,15 +1080,6 @@ public final class MetalShaders {
         MetalNative.blitTextureToTexture(frame, this.mainColor, this.opaqueColor, 0, 0, 0, 0, 0, this.mainWidth, this.mainHeight);
         MetalNative.blitTextureToTexture(frame, this.mainDepth, this.opaqueDepth, 0, 0, 0, 0, 0, this.mainWidth, this.mainHeight);
         this.opaqueSnapshotThisFrame = true;
-    }
-
-    /** Copies the finished world image so the composite pass can sample it for puddle reflections. */
-    private void snapshotScene(final long frame) {
-        if (this.opaqueColor == 0L || this.opaqueWidth != this.mainWidth || this.opaqueHeight != this.mainHeight) {
-            this.snapshotOpaque(frame);
-            return;
-        }
-        MetalNative.blitTextureToTexture(frame, this.mainColor, this.opaqueColor, 0, 0, 0, 0, 0, this.mainWidth, this.mainHeight);
     }
 
     /**

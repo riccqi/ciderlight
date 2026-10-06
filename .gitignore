@@ -43,3 +43,6 @@ replay_*.log
 
 logs/
 .claude/worktrees/
+output/
+releases/
+/*.png

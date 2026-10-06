@@ -67,7 +67,6 @@ static void checkAir(id<MTLDevice> device, id<MTLLibrary> lib) {
     require(simd_distance(v[46].xyz, (simd_float3){0.9f,0.05f,0.03f}) < 0.00001f, @"Near glass tint missing");
     require(simd_distance(v[47].xyz, (simd_float3){0.03f,0.05f,0.9f}) < 0.00001f, @"Far glass tint missing");
     require(simd_distance(v[48].xyz, (simd_float3){1,1,1}) < 0.00001f, @"Glass coloured light in front of its surface");
-    require(simd_distance(v[49].xyz, (simd_float3){0.96f,0.62f,0.612f}) < 0.00001f, @"Surface lighting under coloured glass lost its ambient sky light");
     require(simd_distance(v[50].xyz, v[46].xyz) < 0.00001f && simd_length(v[51].xyz) == 0, @"Water visibility lost its RGB tint or leaked through blockers");
     for (int j = 0; j < 3; j++) {
         require(fabsf(v[52][j] - v[35][j] * redValues[j]) < 0.00001f, @"Air march did not preserve near glass colour");
