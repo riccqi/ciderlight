@@ -43,12 +43,14 @@ The change applies after you restart the game. Pick **Low** on A-series or lower
 
 ## Installing
 
-**Easiest: Modrinth App or Prism Launcher**
+### Modrinth App or Prism Launcher (easiest)
+
 1. Create a new instance for **Minecraft 26.3** with **Fabric** as the loader.
 2. Add Ciderlight to that instance (search for it, or drag the `.jar` into the instance's Mods tab).
 3. Play.
 
-**Official Minecraft Launcher**
+### Official Minecraft Launcher
+
 1. Install Fabric Loader for 26.3 from [fabricmc.net/use](https://fabricmc.net/use/). The installer needs Java.
 2. Put the Ciderlight `.jar` in `~/Library/Application Support/minecraft/mods/`. In Finder, press ⌘⇧G and paste that path.
 3. Pick the Fabric 26.3 profile in the launcher and play.
