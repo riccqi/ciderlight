@@ -14,7 +14,7 @@ import org.slf4j.Logger;
 
 /**
  * The player's choice of shaders in Video Settings (VideoSettingsScreenMixin): off, low or high quality. Without a
- * saved choice, Quality picks low for A-series GPUs and the plain M1 and M2, and high otherwise. The choice is saved to
+ * saved choice, Quality picks low for A-series GPUs and the plain M1, and high otherwise. The choice is saved to
  * config/ciderlight.properties and takes effect at the next start; -Dciderlight.shaders=false and
  * -Dciderlight.quality=low|high still override it.
  */

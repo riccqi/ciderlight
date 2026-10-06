@@ -39,7 +39,7 @@ Go to **Options > Video Settings**. The first button under the graphics preset i
 - **Low**: smaller shadow maps, coarser fog, and the world drawn at a lower resolution. Much lighter on the graphics chip, with most of the look.
 - **Off**: Minecraft's normal look, still drawn with Metal.
 
-The change applies after you restart the game. Pick **Low** on A-series or lower-tier M chips, and **High** on everything else. A-series Macs and the plain M1 and M2 start on Low by themselves; all others start on High.
+The change applies after you restart the game. Pick **Low** on A-series or lower-tier M chips, and **High** on everything else. A-series Macs and the plain M1 start on Low by themselves; all others start on High.
 
 ## Installing
 
