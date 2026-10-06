@@ -22,7 +22,7 @@ public class VideoSettingsScreenMixin {
     @Unique
     private static final Component CIDERLIGHT_TOOLTIP = Component.literal(
         "Ciderlight's shadows, light shafts, water, sky and waving plants. Low is lighter on the GPU (smaller shadow maps, "
-            + "coarser fog, the world at two thirds of the window's resolution) and is the default on A-series chips and the plain M1. "
+            + "coarser fog, the world at two thirds of the window's resolution) and is the default on A-series chips and the plain M1 to M4. "
             + "Off keeps the Metal renderer with Minecraft's own look.");
     @Unique
     private static final Component CIDERLIGHT_RESTART = Component.literal("Applies after restarting the game").withStyle(ChatFormatting.RED);

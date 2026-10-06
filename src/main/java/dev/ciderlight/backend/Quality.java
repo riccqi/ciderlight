@@ -7,8 +7,8 @@ import org.slf4j.Logger;
 
 /**
  * How much the shader pipeline spends on a frame. LOW is for phone-class GPUs (the A-series chip in the MacBook Neo),
- * which have about a third of an M-series GPU, and for the plain M1, with half an M1 Pro's GPU: smaller shadow maps,
- * a coarser fog and ambient-occlusion buffer, and shorter fog and reflection marches, and the world drawn at two thirds
+ * which have about a third of an M-series GPU, and for the plain M1 to M4, with less GPU than an M1 Pro and mostly in
+ * fanless MacBook Airs that slow down as they heat up: smaller shadow maps, a coarser fog and ambient-occlusion buffer, and shorter fog and reflection marches, and the world drawn at two thirds
  * of the window's resolution (RenderScale). The Shaders setting in Video Settings (ShaderSetting) overrides the choice
  * made from the GPU's name, and -Dciderlight.quality=low|high overrides both.
  */
@@ -78,10 +78,10 @@ enum Quality {
     }
 
     /**
-     * "Apple A18 Pro" and the like, and the plain "Apple M1" (7 or 8 GPU cores). The M1 Pro, Max and Ultra, and the
-     * plain M2 onwards (about two thirds of an M1 Pro's GPU and up), keep HIGH.
+     * "Apple A18 Pro" and the like, and the plain "Apple M1" to "Apple M4" (7 to 10 GPU cores). Their Pro, Max and
+     * Ultra versions, and the plain M5 onwards, keep HIGH.
      */
     static boolean lowEnd(final String deviceName) {
-        return deviceName.startsWith("Apple A") || deviceName.equals("Apple M1");
+        return deviceName.startsWith("Apple A") || deviceName.matches("Apple M[1-4]");
     }
 }

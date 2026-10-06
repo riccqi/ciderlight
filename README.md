@@ -44,7 +44,7 @@ Visual references: Complementary Shaders and Bliss (Chocapic13 edit). All Metal 
 ### Settings
 
 Choose in **Options > Video Settings > Quality & Performance > Shaders**: Off (Metal renderer, vanilla look), Low or
-High. Applies after a restart. A-series GPUs and the plain M1 default to Low (smaller shadow maps, fewer samples,
+High. Applies after a restart. A-series GPUs and the plain M1, M2, M3 and M4 default to Low (smaller shadow maps, fewer samples,
 lighter water reflections, world drawn at about two thirds resolution); everything else defaults to High. The choice
 is saved in `config/ciderlight.properties`.
 
