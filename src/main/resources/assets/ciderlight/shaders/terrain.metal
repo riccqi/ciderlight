@@ -61,6 +61,7 @@ struct Fog {
 #define SPRITE_ICE 2
 #define SPRITE_FLAME 3  // all flame: fire, campfire fire
 #define SPRITE_GLOW 4   // has a flame in it: torches, lanterns, lit campfire logs
+#define SPRITE_WATER_GLASS 5 // water's side against glass or leaves (vanilla's overlay texture)
 
 // Which special sprite this atlas texel belongs to (SPRITE_*, 0 for none): one lookup in the sprite map.
 static int sprite_kind(const device uchar *spriteMap, float2 uv) {
@@ -437,10 +438,31 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             float3 seen = opaqueColor.sample(linearClamp, uvR).rgb;
             // A translucent surface already drawn behind this one (glass, another water face) was not in the snapshot.
             float3 snapshot = opaqueColor.read(uint2(in.position.xy)).rgb;
-            seen = mix(seen, behind.rgb, smoothstep(0.015, 0.06, length(behind.rgb - snapshot)));
+            float layered = smoothstep(0.015, 0.06, length(behind.rgb - snapshot));
+            seen = mix(seen, behind.rgb, layered);
 
             // --- absorption and scattering by the thickness of water (Beer–Lambert) ---
             float th = min(thickness, 96.0);
+            // Behind a side face the depth snapshot shows where the view ends, which is where the water ends only if it
+            // ends on something solid: the bed of a stream seen edge-on, the cliff behind a waterfall. Then that depth
+            // counts, though never less than two blocks, or the foot of a stream's side, where the block it runs over
+            // comes right up to the face, would go clear. If the water ends first, at the far side of a sheet (vanilla
+            // draws it from within too; shaded water writes alpha 0), at anything else drawn over the snapshot, or before
+            // the open sky, the snapshot overstates it (a waterfall's lip went dark navy): light through the side then
+            // crosses a sheet's two blocks, and the face it leaves the water by adds none. A side against glass or leaves
+            // looks into a pool or tank, whose depth always counts.
+            float side = 1.0 - smoothstep(0.3, 0.7, n.y);
+            bool leaving = false;
+            if (abs(n.y) < 0.2) {
+                // Vanilla insets each side face a thousandth of a block into its own block, so where the face lies in
+                // the block grid tells which side of it the water is on.
+                float3 grid = in.worldPos - float3(globals.CameraOffset);
+                bool alongX = abs(n.x) > abs(n.z);
+                float waterSide = fract(alongX ? grid.x : grid.z) < 0.5 ? 1.0 : -1.0;
+                leaving = (alongX ? V.x : V.z) * waterSide < 0.0;
+            }
+            bool endsFirst = (behind.a < 0.002 || layered > 0.5 || behindW > 1e4) && kind != SPRITE_WATER_GLASS;
+            th = mix(th, leaving ? 0.0 : (endsFirst ? 2.0 : max(th, 2.0)), side);
             float3 transmittance = exp(-water_absorption(in.color.rgb) * th);
             float murk = 1.0 - exp(-th * 0.075);
             // Scattered light from deep water: the biome hue pulled towards teal, with only a trace of the vanilla

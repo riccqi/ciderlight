@@ -173,6 +173,8 @@ public final class MetalShaders {
         "torch", "soul_torch", "redstone_torch", "copper_torch", "lantern", "soul_lantern", "copper_lantern", "exposed_copper_lantern",
         "weathered_copper_lantern", "oxidized_copper_lantern", "campfire_log_lit", "soul_campfire_log_lit"
     };
+    /** Water's side against glass or leaves: a pool or tank seen through its wall (listed after the glow ones). */
+    private static final String[] WATER_GLASS_SPRITES = {"water_overlay"};
     /** Particle sprites that are all flame or molten: drawn at full brightness like the flames of blocks. */
     private static final String[] FLAME_PARTICLES = {"flame", "soul_fire_flame", "copper_fire_flame", "lava"};
     /** The block of FrameData from airNear up to waterParams; its end (after `reserved` in frame.metal) fixes the later offsets. */
@@ -1360,7 +1362,7 @@ public final class MetalShaders {
     }
 
     /** Sprite materials in the high four bits of a sprite-map byte (SPRITE_* in terrain.metal). */
-    private static final String[][] MATERIAL_SPRITES = {SHINY_SPRITES, ICE_SPRITES, FLAME_SPRITES, GLOW_SPRITES};
+    private static final String[][] MATERIAL_SPRITES = {SHINY_SPRITES, ICE_SPRITES, FLAME_SPRITES, GLOW_SPRITES, WATER_GLASS_SPRITES};
 
     /**
      * Builds the sprite map from the block registry and the loaded block models; cheap when nothing changed. Each
