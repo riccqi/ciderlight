@@ -5,6 +5,7 @@ kernel void reflection_checks(constant float4x4 &vp [[buffer(0)]], device float4
     ReflectionHit hit = trace_reflection(depth, vp, origin, direction);
     out[0] = float4(hit.uv, hit.confidence, hit.distance);
     out[1] = float4(reflection_eye(vp), 1.0);
+    out[3] = float4(hit.hidden, 0, 0, 0);
     // Control: the former condition accepts a foreground overlap as a reflection.
     constexpr sampler nearest(filter::nearest, address::clamp_to_edge);
     float stride = 0.3;

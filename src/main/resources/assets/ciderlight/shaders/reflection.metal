@@ -81,6 +81,14 @@ static float reflection_sidestep(depth2d<float> depth, float2 coefficients, floa
     return 0.0;
 }
 
+// Whether a ray that ended at `previous` (at clip `clip`) is hidden behind something, so that what it reflects is unknown.
+// Something nearer the camera than the water does not count: a ray heading away from the camera passes behind it only
+// on screen, and guessing dark water there would paint the shape of a nearby tree's canopy into distant water.
+static float reflection_hidden(float4 previous, float4 clip, float4 clipOrigin, float4 clipStep) {
+    if (previous.z < 0.0) return 0.0;
+    return clipStep.w > 0.0 && clip.w - previous.z < clipOrigin.w ? 0.0 : 1.0;
+}
+
 static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 origin, float3 direction) {
     ReflectionHit miss = {float2(0.0), 0.0, 0.0};
     float2 coefficients = reflection_depth_coefficients(vp);
@@ -107,7 +115,7 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
         float t = min(previousT + stride, 128.0);
         float4 sample = reflection_probe(depth, coefficients, clipOrigin + clipStep * t, shift);
         if (sample.w == 0.0) {
-            fallback.hidden = previous.z >= 0.0 ? 1.0 : 0.0;
+            fallback.hidden = reflection_hidden(previous, clipOrigin + clipStep * previousT, clipOrigin, clipStep);
             return fallback;
         }
         if (sample.z >= 0.0 && previous.z < 0.0) {
@@ -163,6 +171,6 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
         previousT = t;
         stride *= REFLECTION_STEP_GROWTH;
     }
-    fallback.hidden = previous.z >= 0.0 ? 1.0 : 0.0;
+    fallback.hidden = reflection_hidden(previous, clipOrigin + clipStep * previousT, clipOrigin, clipStep);
     return fallback;
 }

@@ -54,7 +54,7 @@ static void checkReflections(id<MTLDevice> device, NSString *defines) {
             id<MTLTexture> depth = [device newTextureWithDescriptor:desc];
             [depth replaceRegion:MTLRegionMake2D(0,0,size,size) mipmapLevel:0 withBytes:pixels bytesPerRow:size*sizeof(float)];
             id<MTLBuffer> uniforms = [device newBufferWithBytes:&vp length:sizeof(vp) options:MTLResourceStorageModeShared];
-            id<MTLBuffer> result = [device newBufferWithLength:3*sizeof(simd_float4) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> result = [device newBufferWithLength:4*sizeof(simd_float4) options:MTLResourceStorageModeShared];
             id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
             id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
             [enc setComputePipelineState:state]; [enc setBuffer:uniforms offset:0 atIndex:0];
@@ -71,6 +71,9 @@ static void checkReflections(id<MTLDevice> device, NSString *defines) {
                 float hitPlane = scene == 3 ? -10 : plane;
                 float expectedT = (hitPlane-simd_dot(normal,origin))/simd_dot(normal,direction);
                 require(fabsf(out[0].w-expectedT) < 0.08f, @"Reflection accepted a hit away from the actual surface");
+            }
+            if ((scene == 2 || scene == 8) && camera < 4) {
+                require(out[3].x == 0, [NSString stringWithFormat:@"Reflection camera=%d scene=%d: a ray behind something nearer than the water is guessed as dark water",camera,scene]);
             }
             if (scene == 2 && camera < 4) require(out[2].x == 1, @"Fixture no longer reproduces the old foreground reflection bug");
         }
