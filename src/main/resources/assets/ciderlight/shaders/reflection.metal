@@ -82,6 +82,25 @@ static float reflection_sidestep(depth2d<float> depth, float2 coefficients, floa
     return 0.0;
 }
 
+// How clear of anything nearer the camera than the water (at clip depth `waterW`) a hit at `uv` lies on screen: 0 with
+// such an occluder within 2 pixels, rising to 1 with none within 16. A leaf canopy in front of far water lets rays
+// reach the scene beyond through its see-through texels and past its ragged edge, a different outcome in every column
+// of pixels: drawn down the water, those hits are streaks. Faded out, the water there shows the sky evenly.
+static float reflection_clearance(depth2d<float> depth, float2 coefficients, float2 uv, float waterW) {
+    constexpr sampler nearest(filter::nearest, address::clamp_to_edge);
+    float2 pixel = 1.0 / float2(depth.get_width(), depth.get_height());
+    const float2 directions[4] = { float2(-1, 0), float2(1, 0), float2(0, -1), float2(0, 1) };
+    for (int i = 0; i < 4; i++) {
+        for (int d = 0; d < 4; d++) {
+            float sampled = depth.sample(nearest, uv + directions[d] * float(2 << i) * pixel);
+            if (sampled > 0.0 && coefficients.y / (sampled - coefficients.x) < waterW) {
+                return float(i) * 0.25;
+            }
+        }
+    }
+    return 1.0;
+}
+
 // Whether a ray that ended at `previous` (at clip `clip`) is hidden behind something, so that what it reflects is unknown.
 // Something nearer the camera than the water does not count: a ray heading away from the camera passes behind it only
 // on screen, and guessing dark water there would paint the shape of a nearby tree's canopy into distant water.
@@ -119,6 +138,12 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
             fallback.hidden = reflection_hidden(previous, clipOrigin + clipStep * previousT, clipOrigin, clipStep);
             return fallback;
         }
+        float4 stepClip = clipOrigin + clipStep * t;
+        // Behind something nearer the camera than the water (the leaves of a tree the camera stands under): what the
+        // ray would find past it through gaps in the leaves differs from column to column, so it reflects the sky.
+        if (sample.z > 1.0 && previous.z < 0.0 && clipStep.w > 0.0 && stepClip.w - sample.z < clipOrigin.w) {
+            return fallback;
+        }
         if (sample.z >= 0.0 && previous.z < 0.0) {
             float low = previousT, high = t;
             float4 refined = sample;
@@ -143,6 +168,7 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
             float2 edge = smoothstep(float2(0.0), margin, refined.xy) * smoothstep(float2(0.0), margin, 1.0 - refined.xy);
             float confidence = edge.x * edge.y * (1.0 - smoothstep(96.0, 128.0, high));
             if (refined.z <= thickness) {
+                if (clipStep.w > 0.0) confidence *= reflection_clearance(depth, coefficients, refined.xy, clipOrigin.w);
                 return ReflectionHit{refined.xy, confidence, high};
             }
             // The ray passed behind something (a leaf canopy, a trunk seen from its far side). Keep marching to what
