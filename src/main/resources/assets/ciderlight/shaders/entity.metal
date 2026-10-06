@@ -126,6 +126,25 @@ vertex LightOut particle_light_vertex(ParticleLightIn in [[stage_in]],
     return out;
 }
 
+// Moving blocks (falling sand, blocks pushed by pistons): vanilla's block vertex format has no UV1, so UV2 is at location 3.
+struct BlockLightIn {
+    float3 Position [[attribute(0)]];
+    float2 UV0 [[attribute(2)]];
+    int2 UV2 [[attribute(3)]];
+};
+
+vertex LightOut block_light_vertex(BlockLightIn in [[stage_in]],
+                                   constant DynamicTransforms &dyn [[buffer(0)]],
+                                   constant FrameData &frame [[buffer(14)]]) {
+    LightOut out;
+    float4 world = frame.invView * (dyn.ModelViewMat * float4(in.Position, 1.0));
+    out.position = frame.viewProj * float4(world.xyz, 1.0);
+    out.position.y = -out.position.y;
+    out.uv0 = in.UV0;
+    out.blockLight = saturate(float(in.UV2.x) / 240.0);
+    return out;
+}
+
 fragment float4 entity_light_fragment(LightOut in [[stage_in]],
                                       texture2d<float> atlas [[texture(0)]],
                                       sampler atlasSampler [[sampler(0)]]) {

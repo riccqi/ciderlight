@@ -665,8 +665,9 @@ public final class MetalShaders {
 
     private long buildEntityLightState(final boolean particle, final int[] descriptor) {
         long library = this.entityLibrary();
-        // Particles have their own vertex layout (UV0 and UV2 at other attribute locations).
-        String vertex = particle ? "particle_light_vertex" : "entity_light_vertex";
+        // Particles have their own vertex layout (UV0 and UV2 at other attribute locations), and so do moving blocks,
+        // whose vertex format has no overlay UV1: UV2 is attribute 3 there instead of 4.
+        String vertex = particle ? "particle_light_vertex" : hasAttribute(descriptor, 4) ? "entity_light_vertex" : "block_light_vertex";
         String fragment = particle ? (this.particlesLit ? "particle_lit_fragment" : "particle_light_fragment") : "entity_light_fragment";
         return MetalNative.pipelineCreate(this.device.context(), library, vertex, library, fragment, alphaOnlyDescriptor(descriptor), "Ciderlight entity light");
     }
@@ -857,6 +858,8 @@ public final class MetalShaders {
     /**
      * Entity, armor and item pipelines whose draws should cast shadows. Players (and a few mobs) are drawn with
      * entity_translucent; the shadow fragment only drops their nearly clear texels. Emissive eyes cast nothing.
+     * Falling sand and gravel and blocks pushed by pistons are drawn apart from the terrain with the *_block pipelines,
+     * so they are lit like entities too: without this they cast no shadow and lost their torch light while moving.
      */
     static boolean castsEntityShadow(final String pipelineName) {
         if (!ENABLED || !pipelineName.startsWith("minecraft:pipeline/")) {
@@ -864,7 +867,8 @@ public final class MetalShaders {
         }
         String name = pipelineName.substring("minecraft:pipeline/".length());
         return name.startsWith("entity_cutout") || name.startsWith("entity_solid") || name.equals("item_cutout")
-            || name.equals("entity_translucent") || name.equals("entity_translucent_cull") || name.equals("armor_cutout_no_cull");
+            || name.equals("entity_translucent") || name.equals("entity_translucent_cull") || name.equals("armor_cutout_no_cull")
+            || name.equals("solid_block") || name.equals("cutout_block") || name.equals("translucent_block");
     }
 
     /**
@@ -2226,6 +2230,17 @@ public final class MetalShaders {
     }
 
     /** Converts a pipeline's descriptor into a depth-only one for the shadow pass. */
+    /** Whether a vertex descriptor (MetalRenderPipeline.describe, or shadowDescriptor of one) has an attribute at this location. */
+    private static boolean hasAttribute(final int[] descriptor, final int location) {
+        int attribStart = 1 + descriptor[0] * 3;
+        for (int a = 0; a < descriptor[attribStart]; a++) {
+            if (descriptor[attribStart + 1 + a * 4] == location) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static int[] shadowDescriptor(final int[] base) {
         int nBuffers = base[0];
         int attribStart = 1 + nBuffers * 3;
