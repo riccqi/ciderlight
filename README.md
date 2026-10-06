@@ -56,8 +56,10 @@ JVM `-D` overrides: `ciderlight.quality=low|high`, `ciderlight.shaders=false`, `
 ## Installing
 
 1. Install Fabric Loader for Minecraft 26.3 (https://fabricmc.net/use/installer/).
-2. Copy `ciderlight-0.1.5.jar` into `~/Library/Application Support/minecraft/mods/`.
+2. Download the latest Ciderlight JAR from [Releases](https://github.com/riccqi/ciderlight/releases) and copy it into `~/Library/Application Support/minecraft/mods/`.
 3. Launch the Fabric profile. Ciderlight is client-side only, so it works on any server.
+
+Don't install Sodium, Iris or Sodium Extra alongside it: Fabric won't launch with them (see [Known limitations](#known-limitations)).
 
 Requires an Apple Silicon Mac on macOS 14 or later. On other machines the mod turns itself off and the game uses its default renderer.
 

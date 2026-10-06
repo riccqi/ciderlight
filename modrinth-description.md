@@ -57,6 +57,8 @@ The change applies after you restart the game. Pick **Low** on A-series or lower
 
 Ciderlight doesn't need Fabric API. It is client-side only, so it works on any server.
 
+**Don't install Sodium, Iris or Sodium Extra alongside it.** Fabric won't launch with them in the same instance.
+
 ## Good to know
 
 - It doesn't work with Sodium, or with mods that need it such as Iris and Sodium Extra: Fabric won't load them together. It hasn't been tested with other rendering mods, so try it on its own first.

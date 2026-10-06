@@ -1,13 +1,14 @@
 CIDERLIGHT: HOW TO INSTALL
 
 You need: an Apple Silicon Mac (M1 or newer) on macOS 14 or later, and Minecraft Java Edition.
-You only need the one file: ciderlight-0.1.5.jar. Don't unzip it, and don't double-click it.
+You only need the one file: the latest Ciderlight .jar. Don't unzip it, and don't double-click it.
+Don't add Sodium, Iris or Sodium Extra: Minecraft won't start with them alongside Ciderlight.
 
 
 OPTION A: Modrinth App (easiest)
 1. Download the Modrinth App from modrinth.com/app and sign in with your Microsoft account.
 2. Make a new instance: Minecraft 26.3, loader Fabric.
-3. Open the instance and drag ciderlight-0.1.5.jar onto its content page.
+3. Open the instance and drag the Ciderlight jar onto its content page.
 4. Press Play.
 
 
@@ -44,7 +45,7 @@ A-series Macs and the plain M1 start on Low by themselves; all others start on H
 
 TIPS
 - Shaders are on automatically. You don't need OptiFine or Iris.
-- Install it on its own first, without other graphics mods like Sodium or Iris.
+- Install it on its own first, without other graphics mods.
 - It works on any server (it only changes your graphics).
 - For a new version, just swap the old jar for the new one.
 - Something wrong? Send me a screenshot plus the file logs/latest.log from your
