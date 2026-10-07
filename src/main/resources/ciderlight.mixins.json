@@ -19,7 +19,8 @@
     "RenderPipelinesMixin",
     "BackupConfirmScreenAccessor",
     "SDLEventHandlerMixin",
-    "MinecraftServerMixin"
+    "MinecraftServerMixin",
+    "WindowMixin"
   ],
   "injectors": {
     "defaultRequire": 1

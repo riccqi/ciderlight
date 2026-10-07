@@ -464,6 +464,10 @@ static void mc_trace_command_buffer(id<MTLCommandBuffer> cb, double committed) {
 static double mc_trace_input_max = 0;
 static int64_t mc_trace_input_slow = 0, mc_trace_input_frames = 0;
 static double mc_trace_input_carry = 0; // input of dropped frames, waiting for the next frame that is shown
+// From the moment each shown frame read the mouse and keyboard to the moment it reached the screen: the least input
+// lag there can be. The longest and the sum, over how many frames.
+static double mc_trace_read_max = 0, mc_trace_read_sum = 0;
+static int64_t mc_trace_read_frames = 0;
 
 // Called with mc_trace_mutex held.
 static void mc_trace_input_shown(double inputTime, double presented) {
@@ -520,14 +524,32 @@ EXPORT void mc_trace_frame_input(void *drawablePtr, double inputTime) {
     }];
 }
 
-// out: [longest input to screen in seconds, frames over 60 ms, frames measured]
+// readTime: when the frame read the mouse and keyboard, on the CACurrentMediaTime clock.
+EXPORT void mc_trace_frame_read(void *drawablePtr, double readTime) {
+    id<CAMetalDrawable> drawable = BORROW(id<CAMetalDrawable>, drawablePtr);
+    [drawable addPresentedHandler:^(id<MTLDrawable> d) {
+        double t = d.presentedTime;
+        if (t == 0) return;
+        pthread_mutex_lock(&mc_trace_mutex);
+        mc_trace_read_max = MAX(mc_trace_read_max, t - readTime);
+        mc_trace_read_sum += t - readTime;
+        mc_trace_read_frames++;
+        pthread_mutex_unlock(&mc_trace_mutex);
+    }];
+}
+
+// out: [longest input to screen in seconds, frames over 60 ms, frames measured,
+//       longest read to screen in seconds, their sum, frames measured]
 EXPORT void mc_trace_input_take(double *out) {
     pthread_mutex_lock(&mc_trace_mutex);
     out[0] = mc_trace_input_max;
     out[1] = (double)mc_trace_input_slow;
     out[2] = (double)mc_trace_input_frames;
-    mc_trace_input_max = 0;
-    mc_trace_input_slow = mc_trace_input_frames = 0;
+    out[3] = mc_trace_read_max;
+    out[4] = mc_trace_read_sum;
+    out[5] = (double)mc_trace_read_frames;
+    mc_trace_input_max = mc_trace_read_max = mc_trace_read_sum = 0;
+    mc_trace_input_slow = mc_trace_input_frames = mc_trace_read_frames = 0;
     pthread_mutex_unlock(&mc_trace_mutex);
 }
 

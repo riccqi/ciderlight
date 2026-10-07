@@ -8,6 +8,9 @@ Covers three kinds of lag:
   - input lag with smooth frames: key and mouse events read late, or frames that took long to reach the screen after
     the input in them (frames queued behind a busy GPU)
 
+Also lists key presses and releases, mouse movement and window focus changes, for keys that seem to stay held or a
+camera that keeps turning: whether the release or the movement reached the game late, never, or on time.
+
 Needs the game launched with -Dciderlight.debug=true (and -Dciderlight.hitchTraceSeconds=3600 to trace past the first
 30 seconds of a world). Times are wall-clock, so they can be matched against what you saw.
 
@@ -27,6 +30,11 @@ DEFAULT_LOG = os.path.expanduser("~/Library/Application Support/minecraft/logs/l
 HEADER = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] ")
 SECOND = re.compile(r"^\+([0-9.]+)s: (\d+) frames .*?max ([0-9.]+) ms\), (\d+) reached the screen, (\d+) not presented")
 INPUT = re.compile(r"\| input: (\d+) events, read max ([0-9.]+)ms after they happened, to screen max ([0-9.]+)ms \((\d+) of (\d+) frames over 60ms\)")
+KEY = re.compile(r"key (\S+) (down|up)(?: after (\d+)ms held| \(no press seen\))?, read (\d+)ms late")
+FOCUS = re.compile(r"window focus (gained|lost)")
+MOUSE = re.compile(r"\| mouse moved (\d+) x (\d+) px in (\d+) events")
+HELD = re.compile(r"\| keys held: ([^|\n]+)")
+READ = re.compile(r"\| frame read input to screen avg ([0-9.]+) max ([0-9.]+)ms")
 SERVER = re.compile(r"\| server: (\d+) ticks, max ([0-9.]+)ms, (\d+) over 50ms")
 FRAME = re.compile(r"^\s+\+([0-9.]+)s frame ([0-9.]+)ms \(render thread on cpu ([0-9.]+)\)( NOT PRESENTED)?:(.*)")
 
@@ -65,6 +73,15 @@ def parse(path):
                 if i:
                     second.update(inputs=int(i[1]), read=float(i[2]), to_screen=float(i[3]), late=int(i[4]),
                                   measured=int(i[5]))
+                mo = MOUSE.search(line)
+                if mo:
+                    second.update(mouse_x=int(mo[1]), mouse_y=int(mo[2]), mouse_events=int(mo[3]))
+                kh = HELD.search(line)
+                if kh:
+                    second["held"] = kh[1].strip()
+                r = READ.search(line)
+                if r:
+                    second.update(read_avg=float(r[1]), read_max=float(r[2]))
                 v = SERVER.search(line)
                 if v:
                     second.update(ticks=int(v[1]), tick_max=float(v[2]), slow_ticks=int(v[3]))
@@ -180,6 +197,16 @@ def report_server(world, seconds):
 
 def report_input(world, seconds, lo, hi):
     """Input that reached the screen late although frames were quick."""
+    timed = [s for s in seconds if s.get("read_avg", 0) > 0 and s["shown"] > 0]
+    if timed:
+        typical = sorted(s["read_avg"] for s in timed)[len(timed) // 2]
+        print("\nFrame latency (from a frame reading input to it reaching the screen; the least lag any input can have):")
+        print("  typical %.0fms" % typical)
+        slow = [s for s in timed if s["read_avg"] >= max(45.0, 1.6 * typical)]
+        for s in slow:
+            print("  %s  avg %.0fms, worst %.0fms, %d fps%s" % (
+                clock(world["origin"] + s["t"])[:8], s["read_avg"], s["read_max"], s["frames"],
+                "  << frames were smooth (max %.0fms): lag without a freeze" % s["max"] if s["max"] < 35 else ""))
     measured = [s for s in seconds if s.get("inputs", 0) > 0 and s["shown"] > 0]
     print("\nInput lag (key/mouse to screen):")
     if not measured:
@@ -203,6 +230,44 @@ def report_input(world, seconds, lo, hi):
         m = re.search(r"input read ([0-9]+)ms after it happened", f["detail"])
         if m and lo <= wall <= hi and visible_at(world, f["t"]):
             print("    %s  input read %sms late (frame %.0fms)" % (clock(wall), m[1], f["ms"]))
+
+
+def report_keys(world, seconds, lo, hi, everything):
+    """Key presses and releases, focus changes and (around a moment) mouse movement."""
+    events = []
+    for f in world["frames"]:
+        wall = world["origin"] + f["t"]
+        if not lo <= wall <= hi:
+            continue
+        for m in KEY.finditer(f["detail"]):
+            events.append((wall, "key", m))
+        for m in FOCUS.finditer(f["detail"]):
+            events.append((wall, "focus", m))
+    print("\nKeys and focus:")
+    shown = 0
+    for wall, kind, m in events:
+        if kind == "focus":
+            print("  %s  window focus %s%s" % (clock(wall), m[1], "  << keys released now never reach the game" if m[1] == "lost" else ""))
+            shown += 1
+            continue
+        name, what, held, late = m[1], m[2], m[3], int(m[4])
+        flags = []
+        if late >= 50:
+            flags.append("reached the game %dms late" % late)
+        if what == "up" and held is None:
+            flags.append("release without a press seen")
+        if everything or flags:
+            print("  %s  %s %s%s, read %dms late%s" % (clock(wall), name, what, " after %sms" % held if held else "", late,
+                                                      "  << " + "; ".join(flags) if flags else ""))
+            shown += 1
+    if not shown:
+        print("  nothing unusual: every press and release reached the game within 50ms" if events else "  no key events in this window")
+    if everything:
+        print("\nMouse and held keys, second by second:")
+        for s in seconds:
+            if "mouse_events" in s:
+                print("  %s  mouse %4d x %4d px in %3d events%s" % (clock(world["origin"] + s["t"])[:8], s["mouse_x"], s["mouse_y"],
+                                                                   s["mouse_events"], "  | held: " + s["held"] if s.get("held") else ""))
 
 
 def main():
@@ -270,6 +335,7 @@ def main():
 
     report_server(world, seconds)
     report_input(world, seconds, lo, hi)
+    report_keys(world, seconds, lo, hi, args.at is not None)
 
     if args.system:
         print("\nmacOS events:")

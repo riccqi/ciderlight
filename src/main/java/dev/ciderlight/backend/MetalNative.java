@@ -76,7 +76,7 @@ public final class MetalNative {
         static MethodHandle passDrawIndexedIndirect, passDrawSectionsCulled, passDrawIndirect, layerSetup, layerConfigure, layerNextDrawable, layerPrefetchDrawable, present;
         static MethodHandle passSetBytes, passSetBuffer, passSetTexture, samplerCreateCompare, layerDisplayTiming, pacingTake;
         static MethodHandle profileEnable, profileLabel, profileTrace, profileReport, profilePeaks, traceStats, traceEnable;
-        static MethodHandle mediaTime, traceFrameInput, traceInputTake;
+        static MethodHandle mediaTime, traceFrameInput, traceFrameRead, traceInputTake;
 
         static void init() {
             release = fn("mc_release", v(P), CRITICAL);
@@ -98,6 +98,7 @@ public final class MetalNative {
             traceStats = fn("mc_trace_stats", v(ADDRESS));
             mediaTime = fn("mc_media_time", r(JAVA_DOUBLE), CRITICAL);
             traceFrameInput = fn("mc_trace_frame_input", v(P, JAVA_DOUBLE));
+            traceFrameRead = fn("mc_trace_frame_read", v(P, JAVA_DOUBLE));
             traceInputTake = fn("mc_trace_input_take", v(ADDRESS));
             textureCreate = fn("mc_texture_create", r(P, P, I, I, I, I, I, I));
             textureView = fn("mc_texture_view", r(P, P, I, I));
@@ -343,12 +344,24 @@ public final class MetalNative {
         }
     }
 
-    /** Since the last call: the longest input to screen in seconds, frames over 60 ms, frames measured (mc_trace_input_take). */
+    /** Measures, once the drawable reaches the screen, how long after readTime (mediaTime clock) that was. */
+    public static void traceFrameRead(long drawable, double readTime) {
+        try {
+            Handles.traceFrameRead.invokeExact(drawable, readTime);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    /**
+     * Since the last call (mc_trace_input_take): the longest input to screen in seconds, frames over 60 ms, frames
+     * measured; then the longest time from a frame reading input to it reaching the screen, their sum, and frames.
+     */
     public static void traceInputTake(double[] out) {
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment seg = arena.allocate(JAVA_DOUBLE, 3);
+            MemorySegment seg = arena.allocate(JAVA_DOUBLE, 6);
             Handles.traceInputTake.invokeExact(seg);
-            MemorySegment.copy(seg, JAVA_DOUBLE, 0L, out, 0, 3);
+            MemorySegment.copy(seg, JAVA_DOUBLE, 0L, out, 0, 6);
         } catch (Throwable t) {
             throw rethrow(t);
         }

@@ -34,10 +34,11 @@ public final class HitchTrace {
     public static final int TICK = 8;
     public static final int DESTROY = 9;
     public static final int SECTIONS = 10;
-    private static final int KINDS = 11;
+    public static final int INPUT_WAIT = 11;
+    private static final int KINDS = 12;
     private static final String[] NAMES = {
         "shader compile", "pipeline compile", "texture create", "drawable acquire", "drawable prefetch", "gpu wait (submit)", "gpu wait (fence)",
-        "shader passes", "client ticks", "destroys", "section selection"
+        "shader passes", "client ticks", "destroys", "section selection", "waiting to read input"
     };
 
     private static Thread renderThread;
@@ -88,7 +89,7 @@ public final class HitchTrace {
     private static int secondInputs;
     /** SDL timestamp of the oldest input not yet in a frame that was presented, 0 for none. */
     private static long pendingInput;
-    private static final double[] inputToScreen = new double[3];
+    private static final double[] inputToScreen = new double[6];
     /** Integrated server ticks this second (written on the server thread). */
     private static long secondServerMax;
     private static int secondServerTicks;
@@ -184,6 +185,108 @@ public final class HitchTrace {
         }
     }
 
+    /** When each key went down (SDL timestamp, by scancode), 0 while it is up; and the mouse movement this second. */
+    private static final long[] keyDown = new long[512];
+    private static int frameMouseEvents;
+    private static float lastYaw = Float.NaN;
+    private static float lastPitch;
+    private static double secondMouseX;
+    private static double secondMouseY;
+    private static int secondMouseEvents;
+
+    /**
+     * A key went down or up (not a repeat). Every press and release is noted with how late it reached the game and,
+     * for a release, how long the key was held: a release that arrives late, or never, leaves the player walking.
+     */
+    public static void key(final int scancode, final boolean down, final boolean repeat, final long timestamp) {
+        if (!active || repeat || scancode < 0 || scancode >= keyDown.length) {
+            return;
+        }
+        long late = timestamp == 0L ? 0L : org.lwjgl.sdl.SDLTimer.SDL_GetTicksNS() - timestamp;
+        String name = org.lwjgl.sdl.SDLKeyboard.SDL_GetScancodeName(scancode);
+        if (name == null || name.isEmpty()) {
+            name = "#" + scancode;
+        }
+        if (down) {
+            keyDown[scancode] = timestamp;
+            note(String.format(Locale.ROOT, "key %s down, read %.0fms late", name, ms(late)));
+        } else {
+            long held = keyDown[scancode] != 0L && timestamp != 0L ? timestamp - keyDown[scancode] : -1L;
+            keyDown[scancode] = 0L;
+            note(String.format(Locale.ROOT, "key %s up%s, read %.0fms late", name,
+                held >= 0L ? String.format(Locale.ROOT, " after %.0fms held", ms(held)) : " (no press seen)", ms(late)));
+        }
+    }
+
+    /** The mouse moved (relative motion, in pixels): summed per second. */
+    public static void mouseMotion(final float dx, final float dy) {
+        frameMouseEvents++;
+        if (active) {
+            secondMouseX += Math.abs(dx);
+            secondMouseY += Math.abs(dy);
+            secondMouseEvents++;
+        }
+    }
+
+    /** SDL scancodes of W, A, S and D: the movement keys as pressed on the keyboard (default bindings). */
+    private static final int[] MOVEMENT_SCANCODES = {26, 4, 22, 7};
+    private static int heldWithoutKey;
+    private static long releasedAt;
+    private static boolean movingNoted;
+    private static boolean gameHeldKeys;
+
+    /**
+     * Once per client tick: catches a movement key the game still treats as held after its release reached the game,
+     * and a player that keeps moving well after the game saw the keys released (on the ground that stops in a few ticks).
+     */
+    public static void movementTick(final net.minecraft.client.Minecraft minecraft) {
+        net.minecraft.client.player.LocalPlayer player = minecraft.player;
+        if (!active || player == null || minecraft.gui.screen() != null) {
+            heldWithoutKey = 0;
+            return;
+        }
+        net.minecraft.client.Options options = minecraft.options;
+        boolean held = options.keyUp.isDown() || options.keyDown.isDown() || options.keyLeft.isDown() || options.keyRight.isDown();
+        boolean pressed = false;
+        for (int code : MOVEMENT_SCANCODES) {
+            pressed |= keyDown[code] != 0L;
+        }
+        if (held && !pressed) {
+            if (++heldWithoutKey == 6) {
+                note("the game still holds a movement key 300ms after its release reached the game");
+            }
+        } else {
+            if (heldWithoutKey >= 6) {
+                note(String.format(Locale.ROOT, "the game held a movement key %dms after its release reached the game", heldWithoutKey * 50));
+            }
+            heldWithoutKey = 0;
+        }
+        long now = System.nanoTime();
+        if (held) {
+            gameHeldKeys = true;
+            movingNoted = false;
+            return;
+        }
+        if (gameHeldKeys) {
+            gameHeldKeys = false;
+            releasedAt = now;
+        }
+        net.minecraft.world.phys.Vec3 v = player.getDeltaMovement();
+        double speed = Math.sqrt(v.x * v.x + v.z * v.z) * 20.0;
+        if (!movingNoted && releasedAt != 0L && now - releasedAt > 400_000_000L && speed > 1.0 && player.onGround()) {
+            movingNoted = true;
+            note(String.format(Locale.ROOT, "the player still moves at %.1f blocks/s %.0fms after the game saw the movement keys released",
+                speed, (now - releasedAt) / 1e6));
+        }
+    }
+
+    /** The game window gained or lost focus. */
+    public static void focus(final boolean focused) {
+        if (active) {
+            note(focused ? "window focus gained" : "window focus lost");
+        }
+    }
+
     /** For a frame about to be presented: when its oldest input happened, on MetalNative.mediaTime's clock, or 0. */
     static double takeInput() {
         if (pendingInput == 0L) {
@@ -191,7 +294,24 @@ public final class HitchTrace {
         }
         long age = org.lwjgl.sdl.SDLTimer.SDL_GetTicksNS() - pendingInput;
         pendingInput = 0L;
-        return MetalNative.mediaTime() - age / 1e9;
+        // Input from before the window was hidden or a screen held up the frames says nothing about the lag in play.
+        return age > 1_000_000_000L ? 0.0 : MetalNative.mediaTime() - age / 1e9;
+    }
+
+    private static double secondGpuDoneSum;
+    private static double secondGpuDoneMax;
+    private static int secondGpuDoneFrames;
+
+    /** A frame finished on the GPU this long (seconds) after it read the mouse and keyboard (JustInTimeInput). */
+    static void inputToGpuDone(final double seconds) {
+        secondGpuDoneSum += seconds;
+        secondGpuDoneMax = Math.max(secondGpuDoneMax, seconds);
+        secondGpuDoneFrames++;
+    }
+
+    /** When the frame being recorded read the mouse and keyboard, on MetalNative.mediaTime's clock. */
+    static double frameReadTime() {
+        return MetalNative.mediaTime() - (System.nanoTime() - frameStart) / 1e9;
     }
 
     /** One tick of the integrated server took this long (server thread). */
@@ -376,6 +496,21 @@ public final class HitchTrace {
         secondBufferBytes += frameBufferBytes;
         secondBuffers += frameBuffers;
 
+        // The camera follows the mouse once per frame (MouseHandler.handleAccumulatedMovement): a turn in a frame that
+        // read no mouse movement came from somewhere else.
+        net.minecraft.client.player.LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
+        if (player != null && !dev.ciderlight.Benchmark.autoMoves()) {
+            float yaw = player.getYRot(), pitch = player.getXRot();
+            if (!Float.isNaN(lastYaw)) {
+                float turn = Math.abs(net.minecraft.util.Mth.wrapDegrees(yaw - lastYaw)) + Math.abs(pitch - lastPitch);
+                if (turn > 0.3F && frameMouseEvents == 0 && net.minecraft.client.Minecraft.getInstance().gui.screen() == null) {
+                    note(String.format(Locale.ROOT, "camera turned %.1f degrees in a frame with no mouse movement", turn));
+                }
+            }
+            lastYaw = yaw;
+            lastPitch = pitch;
+        }
+        frameMouseEvents = 0;
         if (frameInputAge >= INPUT_LATE_NS) {
             note(String.format(Locale.ROOT, "input read %.0fms after it happened", ms(frameInputAge)));
         }
@@ -435,6 +570,30 @@ public final class HitchTrace {
         MetalNative.traceInputTake(inputToScreen);
         s.append(String.format(Locale.ROOT, " | input: %d events, read max %.1fms after they happened, to screen max %.1fms (%d of %d frames over 60ms)",
             secondInputs, ms(secondInputAge), inputToScreen[0] * 1e3, (int)inputToScreen[1], (int)inputToScreen[2]));
+        s.append(String.format(Locale.ROOT, " | frame read input to screen avg %.1f max %.1fms",
+            inputToScreen[5] > 0 ? inputToScreen[4] / inputToScreen[5] * 1e3 : 0.0, inputToScreen[3] * 1e3));
+        if (secondGpuDoneFrames > 0) {
+            s.append(String.format(Locale.ROOT, " | input to GPU done avg %.1f max %.1fms", secondGpuDoneSum / secondGpuDoneFrames * 1e3,
+                secondGpuDoneMax * 1e3));
+        }
+        secondGpuDoneSum = 0.0;
+        secondGpuDoneMax = 0.0;
+        secondGpuDoneFrames = 0;
+        s.append(String.format(Locale.ROOT, " | mouse moved %.0f x %.0f px in %d events", secondMouseX, secondMouseY, secondMouseEvents));
+        StringBuilder held = new StringBuilder();
+        long sdlNow = org.lwjgl.sdl.SDLTimer.SDL_GetTicksNS();
+        for (int code = 0; code < keyDown.length; code++) {
+            if (keyDown[code] != 0L) {
+                held.append(held.isEmpty() ? "" : ", ").append(org.lwjgl.sdl.SDLKeyboard.SDL_GetScancodeName(code))
+                    .append(String.format(Locale.ROOT, " %.1fs", (sdlNow - keyDown[code]) / 1e9));
+            }
+        }
+        if (!held.isEmpty()) {
+            s.append(" | keys held: ").append(held);
+        }
+        secondMouseX = 0.0;
+        secondMouseY = 0.0;
+        secondMouseEvents = 0;
         synchronized (HitchTrace.class) {
             s.append(String.format(Locale.ROOT, " | server: %d ticks, max %.1fms, %d over 50ms", secondServerTicks, ms(secondServerMax), secondServerSlow));
             secondServerTicks = 0;

@@ -85,6 +85,7 @@ public class MetalSurface implements GpuSurfaceBackend {
             if (input > 0.0) {
                 MetalNative.traceFrameInput(this.drawable, input);
             }
+            MetalNative.traceFrameRead(this.drawable, HitchTrace.frameReadTime());
         }
         int w = Math.min(this.width, textureView.getWidth(0));
         int h = Math.min(this.height, textureView.getHeight(0));

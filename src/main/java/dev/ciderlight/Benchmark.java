@@ -35,6 +35,8 @@ public final class Benchmark {
     private static boolean shot;
     private static boolean shot2;
     private static int lastSequenceTick;
+    private static float lockedYaw = Float.NaN;
+    private static float lockedPitch;
     private static boolean flatWorldOpened;
 
     private Benchmark() {
@@ -302,6 +304,20 @@ public final class Benchmark {
                 server.createCommandSourceStack().withSuppressedOutput(), "execute at @a run summon lightning_bolt ^-6 ^ ^18"
             ));
         }
+        // -Dciderlight.benchThen=<seconds>:<command>|<seconds>:<command>: run these at the player that many seconds after it
+        // was positioned, such as a teleport out of a cave onto the surface.
+        String then = System.getProperty("ciderlight.benchThen");
+        if (then != null && ticksInWorld > SETTLE_TICKS && minecraft.getSingleplayerServer() != null) {
+            for (String entry : then.split("\\|")) {
+                int colon = entry.indexOf(':');
+                if (colon > 0 && ticksInWorld == SETTLE_TICKS + Math.round(Float.parseFloat(entry.substring(0, colon).trim()) * 20.0F)) {
+                    MinecraftServer server = minecraft.getSingleplayerServer();
+                    String command = "execute as @p at @s run " + entry.substring(colon + 1).trim();
+                    LOGGER.info("Ciderlight bench: {}", command);
+                    server.execute(() -> server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), command));
+                }
+            }
+        }
         // -Dciderlight.benchBreak=true (with benchScene): a small floor beside the main scene with a torch, where blocks
         // are broken over and over next to unbroken copies of themselves, to compare block-break debris with its block.
         int breakX = SCENE_X + 40;
@@ -505,6 +521,18 @@ public final class Benchmark {
     public static void onFrame(final Minecraft minecraft) {
         if (done || measureStart == 0L) {
             return;
+        }
+        // Screenshots are compared between runs: once the scene has placed the camera, it stays as placed, whatever
+        // the mouse does over the window meanwhile.
+        if (Boolean.getBoolean("ciderlight.benchShot") && minecraft.player != null && ticksInWorld > SETTLE_TICKS + 40) {
+            if (Float.isNaN(lockedYaw)) {
+                lockedYaw = minecraft.player.getYRot();
+                lockedPitch = minecraft.player.getXRot();
+            }
+            minecraft.player.setYRot(lockedYaw);
+            minecraft.player.setXRot(lockedPitch);
+            minecraft.player.yRotO = lockedYaw;
+            minecraft.player.xRotO = lockedPitch;
         }
         long now = System.nanoTime();
         if (Boolean.getBoolean("ciderlight.benchSequence") && ticksInWorld > SETTLE_TICKS + 180

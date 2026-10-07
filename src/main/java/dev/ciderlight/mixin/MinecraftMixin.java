@@ -23,6 +23,9 @@ public class MinecraftMixin {
         FramePacer.worldTick(minecraft.level != null, minecraft.gui.screen() == null);
         if (HitchTrace.ENABLED) {
             HitchTrace.tickStart(minecraft.level != null, minecraft.gui.screen() == null);
+            if (!Benchmark.autoMoves()) {
+                HitchTrace.movementTick(minecraft);
+            }
         }
     }
 
