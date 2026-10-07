@@ -406,6 +406,13 @@ public class MetalCommandEncoder implements CommandEncoderBackend {
         );
     }
 
+    /** NeoForge adds this to CommandEncoderBackend; with Fabric nothing calls it. */
+    public void clearStencilTexture(final GpuTexture texture, final int value) {
+        this.checkNotInPass("clear");
+        this.flushPendingDepthClear(); // a depth clear queued before this one also clears the stencil
+        MetalNative.clearStencil(this.rawFrame(), ((MetalTexture)texture).handle(), value);
+    }
+
     @Override
     public void clearDepthTexture(final GpuTexture depthTexture, final double clearDepth) {
         this.checkNotInPass("clear");

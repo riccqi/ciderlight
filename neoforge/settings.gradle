@@ -1,0 +1,10 @@
+pluginManagement {
+	repositories {
+		gradlePluginPortal()
+		maven { url = 'https://maven.neoforged.net/releases' }
+	}
+}
+
+// A build of its own, so the NeoForge and Fabric Gradle plugins never share a classpath. Run it from the repository
+// root with ./gradlew -p neoforge build.
+rootProject.name = 'ciderlight-neoforge'

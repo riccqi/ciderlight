@@ -44,6 +44,8 @@ public class MetalRenderPass implements RenderPassBackend {
     private int scissorW;
     private int scissorH;
     private boolean scissorSet;
+    /** Set by NeoForge's RenderPass.setViewport; null: the whole target. */
+    private int @Nullable [] viewport;
 
     @Nullable
     private MetalRenderPipeline pipeline;
@@ -100,6 +102,9 @@ public class MetalRenderPass implements RenderPassBackend {
         this.appliedPipeline = null;
         this.applyPipeline();
         MetalNative.passSetScissor(this.enc, this.scissorX, this.scissorY, this.scissorW, this.scissorH, this.width, this.height);
+        if (this.viewport != null) {
+            MetalNative.passSetViewport(this.enc, this.viewport[0], this.viewport[1], this.viewport[2], this.viewport[3]);
+        }
         for (int slot = 0; slot < this.vertexBuffers.length; slot++) {
             if (this.vertexBuffers[slot] != 0L) {
                 MetalNative.passSetVertexBuffer(this.enc, slot, this.vertexBuffers[slot], this.vertexOffsets[slot]);
@@ -193,6 +198,12 @@ public class MetalRenderPass implements RenderPassBackend {
         this.scissorH = height;
         MetalNative.passSetScissor(this.enc, x, y, width, height, this.width, this.height);
         this.scissorSet = true;
+    }
+
+    /** NeoForge adds this to RenderPassBackend; with Fabric nothing calls it. */
+    public void setViewport(final int x, final int y, final int width, final int height) {
+        this.viewport = new int[]{x, y, width, height};
+        MetalNative.passSetViewport(this.enc, x, y, width, height);
     }
 
     @Override

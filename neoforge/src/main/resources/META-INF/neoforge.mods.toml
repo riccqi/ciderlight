@@ -1,0 +1,37 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "Apache-2.0"
+issueTrackerURL = "https://github.com/riccqi/ciderlight/issues"
+
+[[mods]]
+modId = "ciderlight"
+version = "${version}"
+displayName = "Ciderlight"
+authors = "Richard Qi"
+displayURL = "https://github.com/riccqi/ciderlight"
+description = "Native Apple Metal rendering backend for Minecraft."
+
+[[mixins]]
+config = "ciderlight.mixins.json"
+
+[[dependencies.ciderlight]]
+modId = "neoforge"
+type = "required"
+versionRange = "[26.3.0.56-beta,)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.ciderlight]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.3,26.4)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.ciderlight]]
+modId = "sodium"
+type = "incompatible"
+reason = "Sodium's chunk renderer uses a multi-draw call Ciderlight's Metal backend doesn't provide."
+versionRange = "*"
+ordering = "NONE"
+side = "CLIENT"

@@ -71,7 +71,7 @@ public final class MetalNative {
         static MethodHandle bufferCreate, bufferContents, setLabel, textureCreate, textureView, textureBufferView, textureBufferAlignment;
         static MethodHandle samplerCreate, libraryCreate, pipelineCreate, depthStateCreate;
         static MethodHandle poolPush, poolPop, frameBegin, frameCommit, blitCopyBuffer, blitBufferToTexture, blitTextureToBuffer, blitTextureToTexture;
-        static MethodHandle clearTexture, clearRegion, passBegin, passEnd, passPushDebug, passPopDebug, passSetPipeline, passSetDepthClamp, passSetScissor;
+        static MethodHandle clearTexture, clearRegion, passBegin, passEnd, passPushDebug, passPopDebug, passSetPipeline, passSetDepthClamp, passSetScissor, passSetViewport, clearStencil;
         static MethodHandle passSetVertexBuffer, passBind, passPushConstants, passDraw, passDrawIndexed, passMultiDrawIndexed, passMultiDraw;
         static MethodHandle passDrawIndexedIndirect, passDrawSectionsCulled, passDrawIndirect, layerSetup, layerConfigure, layerNextDrawable, layerPrefetchDrawable, present;
         static MethodHandle passSetBytes, passSetBuffer, passSetTexture, samplerCreateCompare, layerDisplayTiming, pacingTake;
@@ -126,6 +126,8 @@ public final class MetalNative {
             passSetPipeline = fn("mc_pass_set_pipeline", v(P, P, P, I, I, JAVA_FLOAT, JAVA_FLOAT), CRITICAL);
             passSetDepthClamp = fn("mc_pass_set_depth_clamp", v(P, I), CRITICAL);
             passSetScissor = fn("mc_pass_set_scissor", v(P, I, I, I, I, I, I), CRITICAL);
+            passSetViewport = fn("mc_pass_set_viewport", v(P, I, I, I, I), CRITICAL);
+            clearStencil = fn("mc_clear_stencil", v(P, P, I));
             passSetVertexBuffer = fn("mc_pass_set_vertex_buffer", v(P, I, P, JAVA_LONG), CRITICAL);
             passBind = fn("mc_pass_bind", v(P, I, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS), CRITICAL);
             passPushConstants = fn("mc_pass_push_constants", v(P, ADDRESS, I, I), CRITICAL);
@@ -647,6 +649,22 @@ public final class MetalNative {
     public static void passSetDepthClamp(long enc, boolean clamp) {
         try {
             Handles.passSetDepthClamp.invokeExact(enc, clamp ? 1 : 0);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    public static void passSetViewport(long enc, int x, int y, int w, int h) {
+        try {
+            Handles.passSetViewport.invokeExact(enc, x, y, w, h);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    public static void clearStencil(long frame, long tex, int value) {
+        try {
+            Handles.clearStencil.invokeExact(frame, tex, value);
         } catch (Throwable t) {
             throw rethrow(t);
         }

@@ -1,6 +1,7 @@
 package dev.ciderlight.backend;
 
 import com.mojang.logging.LogUtils;
+import dev.ciderlight.platform.LoaderPaths;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
@@ -8,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Properties;
-import net.fabricmc.loader.api.FabricLoader;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
@@ -24,7 +24,7 @@ public enum ShaderSetting {
     HIGH("High");
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("ciderlight.properties");
+    private static final Path FILE = LoaderPaths.configDir().resolve("ciderlight.properties");
     private static final @Nullable ShaderSetting SAVED = load();
     /** Chosen in Video Settings since the game started; applies at the next start. */
     private static @Nullable ShaderSetting chosen;

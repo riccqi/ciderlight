@@ -1147,6 +1147,32 @@ EXPORT void mc_clear_texture(void *framePtr, void *texPtr, int mip, float r, flo
     }
 }
 
+// Clears the stencil of every mip level of a stencil or depth-stencil texture, keeping its depth
+// (NeoForge's CommandEncoder.clearStencilTexture).
+EXPORT void mc_clear_stencil(void *framePtr, void *texPtr, int value) {
+    @autoreleasepool {
+        MCFrame *frame = BORROW(MCFrame *, framePtr);
+        mc_end_blit(frame);
+        id<MTLTexture> tex = BORROW(id<MTLTexture>, texPtr);
+        for (NSUInteger level = 0; level < tex.mipmapLevelCount; level++) {
+            MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+            if (tex.pixelFormat == MTLPixelFormatDepth32Float_Stencil8) {
+                rp.depthAttachment.texture = tex;
+                rp.depthAttachment.level = level;
+                rp.depthAttachment.loadAction = MTLLoadActionLoad;
+                rp.depthAttachment.storeAction = MTLStoreActionStore;
+            }
+            rp.stencilAttachment.texture = tex;
+            rp.stencilAttachment.level = level;
+            rp.stencilAttachment.loadAction = MTLLoadActionClear;
+            rp.stencilAttachment.storeAction = MTLStoreActionStore;
+            rp.stencilAttachment.clearStencil = (uint32_t)value;
+            mc_profile_pass(frame, rp, @"clear stencil");
+            [[frame.commandBuffer renderCommandEncoderWithDescriptor:rp] endEncoding];
+        }
+    }
+}
+
 // Clears a sub-rectangle of a color and depth texture pair by drawing a full-screen triangle under a scissor.
 EXPORT void mc_clear_region(void *framePtr, void *colorPtr, void *depthPtr, int mip, int x, int y, int w, int h,
                             float r, float g, float b, float a, float depth) {
@@ -1265,6 +1291,13 @@ EXPORT void mc_pass_set_scissor(void *encPtr, int x, int y, int w, int h, int ta
     int x1 = MAX(x0, MIN(x + w, targetW)), y1 = MAX(y0, MIN(y + h, targetH));
     MTLScissorRect r = {(NSUInteger)x0, (NSUInteger)y0, (NSUInteger)(x1 - x0), (NSUInteger)(y1 - y0)};
     [BORROW(id<MTLRenderCommandEncoder>, encPtr) setScissorRect:r];
+}
+
+// The whole target is the viewport unless this is called (NeoForge's RenderPass.setViewport). Like the scissor, the
+// rectangle is in the target's memory rows, which is what OpenGL's and Vulkan's coordinates come to here.
+EXPORT void mc_pass_set_viewport(void *encPtr, int x, int y, int w, int h) {
+    MTLViewport vp = {(double)x, (double)y, (double)w, (double)h, 0, 1};
+    [BORROW(id<MTLRenderCommandEncoder>, encPtr) setViewport:vp];
 }
 
 EXPORT void mc_pass_set_vertex_buffer(void *encPtr, int slot, void *buf, int64_t offset) {

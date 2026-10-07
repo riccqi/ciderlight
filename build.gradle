@@ -4,6 +4,9 @@ plugins {
 
 base { archivesName = "ciderlight" }
 
+// src/main is shared with the NeoForge build (neoforge/); src/fabric holds what only the Fabric build needs.
+sourceSets.main.java.srcDir 'src/fabric/java'
+
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
