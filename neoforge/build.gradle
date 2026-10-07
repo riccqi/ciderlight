@@ -16,6 +16,14 @@ sourceSets.main {
 	resources.exclude 'fabric.mod.json'
 }
 
+// Workarounds for NeoForge's dev client (src/devrun), loaded as a mod of their own in runClient and never in the jar.
+sourceSets {
+	devrun {
+		compileClasspath += main.compileClasspath
+		runtimeClasspath += main.runtimeClasspath
+	}
+}
+
 neoForge {
 	version = neo_version
 	runs {
@@ -33,6 +41,9 @@ neoForge {
 	mods {
 		ciderlight {
 			sourceSet sourceSets.main
+		}
+		ciderlight_devrun {
+			sourceSet sourceSets.devrun
 		}
 	}
 }

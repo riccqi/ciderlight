@@ -1,0 +1,11 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "Apache-2.0"
+
+[[mods]]
+modId = "ciderlight_devrun"
+version = "0"
+displayName = "Ciderlight dev-run fixes"
+
+[[mixins]]
+config = "ciderlight_devrun.mixins.json"

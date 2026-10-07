@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "dev.ciderlight.devrun.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["NeoForgeVersionCheckMixin"],
+  "injectors": { "defaultRequire": 1 }
+}
