@@ -22,10 +22,12 @@ jobs:
           java-version: '25'
       - name: Build native library, JAR, and run Java regression checks
         run: ./gradlew --no-daemon build
+      - name: Build the NeoForge JAR
+        run: ./gradlew --no-daemon -p neoforge build
       - name: Record source revision and checksums
         run: |
           mkdir -p build/release
-          cp build/libs/ciderlight-*.jar build/release/
+          cp build/libs/ciderlight-*.jar neoforge/build/libs/ciderlight-neoforge-*.jar build/release/
           git rev-parse HEAD > build/release/SOURCE_COMMIT.txt
           sw_vers > build/release/BUILD_ENVIRONMENT.txt
           clang --version >> build/release/BUILD_ENVIRONMENT.txt

@@ -2,6 +2,7 @@ CIDERLIGHT: HOW TO INSTALL
 
 You need: an Apple Silicon Mac (M1 or newer) on macOS 14 or later, and Minecraft Java Edition.
 You only need the one file: the latest Ciderlight .jar. Don't unzip it, and don't double-click it.
+The steps below are for Fabric. For NeoForge, see NEOFORGE (BETA) further down.
 Don't add Sodium, Iris or Sodium Extra: Minecraft won't start with them alongside Ciderlight.
 
 
@@ -28,6 +29,18 @@ OPTION C: The normal Minecraft Launcher
       ~/Library/Application Support/minecraft
    Make a folder called "mods" if there isn't one, and put the jar in it.
 4. Open the Minecraft Launcher, pick the "fabric-loader-26.3" profile, and press Play.
+
+
+NEOFORGE (BETA)
+Ciderlight also comes as a NeoForge mod: the jar with "neoforge" in its name. NeoForge for
+Minecraft 26.3 is still a beta, and so is this version of Ciderlight.
+1. Follow any option above, but choose NeoForge instead of Fabric (in the normal launcher, run the
+   NeoForge installer from neoforged.net instead of Fabric's), and use the NeoForge jar.
+2. Optional: to stop a Java warning in the log, add this to the instance's Java (JVM) arguments:
+      --enable-native-access=ciderlight
+3. Keep NeoForge's update check on (versionCheck in config/fml.toml, on unless you changed it).
+   With it off, NeoForge 26.3's title screen crashes. That's a NeoForge bug, not Ciderlight's.
+Mods that draw with NeoForge's stencil support may look wrong: Ciderlight doesn't apply it yet.
 
 
 SHADER SETTINGS: OFF, LOW, HIGH

@@ -57,12 +57,17 @@ The change applies after you restart the game. Pick **Low** on A-series or lower
 
 Ciderlight doesn't need Fabric API. It is client-side only, so it works on any server.
 
+### NeoForge (beta)
+
+NeoForge for 26.3 is still a beta, and so is Ciderlight's NeoForge version. Make the instance with **NeoForge** as the loader and pick the NeoForge file (`ciderlight-neoforge-…`). Optionally add `--enable-native-access=ciderlight` to the JVM arguments to silence a Java warning, and keep NeoForge's update check on: with it off, NeoForge 26.3's title screen crashes.
+
 **Don't install Sodium, Iris or Sodium Extra alongside it.** Fabric won't launch with them in the same instance.
 
 ## Good to know
 
 - It doesn't work with Sodium, or with mods that need it such as Iris and Sodium Extra: Fabric won't load them together. It hasn't been tested with other rendering mods, so try it on its own first.
 - OptiFine and Iris shader packs aren't supported. Ciderlight has its own shaders instead.
+- On NeoForge, mods that draw with NeoForge's stencil support may look wrong: Ciderlight doesn't apply it yet.
 - Turn it off without uninstalling by adding `-Dciderlight.disable=true` to the JVM arguments.
 
 ## License

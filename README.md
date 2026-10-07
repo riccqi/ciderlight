@@ -1,6 +1,6 @@
 # Ciderlight
 
-A Fabric mod for Minecraft Java **26.3** that adds a native **Apple Metal** rendering backend and a
+A Fabric (and NeoForge, beta) mod for Minecraft Java **26.3** that adds a native **Apple Metal** rendering backend and a
 built-in, Metal-native shader pipeline.
 
 Download from [CurseForge](https://www.curseforge.com/minecraft/mc-mods/ciderlight).
@@ -59,6 +59,10 @@ JVM `-D` overrides: `ciderlight.quality=low|high`, `ciderlight.shaders=false`, `
 2. Download the latest Ciderlight JAR from [Releases](https://github.com/riccqi/ciderlight/releases) and copy it into `~/Library/Application Support/minecraft/mods/`.
 3. Launch the Fabric profile. Ciderlight is client-side only, so it works on any server.
 
+For NeoForge (beta), install NeoForge for 26.3 instead and use the `ciderlight-neoforge-<version>.jar`. Optionally add
+`--enable-native-access=ciderlight` to the JVM arguments to silence Java's native-access warning, and leave NeoForge's
+version check on: with it off, NeoForge 26.3's title screen crashes.
+
 Don't install Sodium, Iris or Sodium Extra alongside it: Fabric won't launch with them (see [Known limitations](#known-limitations)).
 
 Requires an Apple Silicon Mac on macOS 14 or later. On other machines the mod turns itself off and the game uses its default renderer.
@@ -71,6 +75,8 @@ Requires Xcode command-line tools and a Java 25 JDK (set `JAVA_HOME` to it).
 ./gradlew build                 # jar in build/libs/
 ./gradlew runClient             # dev client
 ./gradlew installMod            # build and copy into the launcher's mods folder
+./gradlew -p neoforge build     # NeoForge jar in neoforge/build/libs/ (same sources, a build of its own)
+./gradlew -p neoforge runClient # NeoForge dev client (its asset download needs a Java 21 runtime too)
 python3 tests/check_shaders.py  # compile shader variants and run GPU regressions
 ```
 
@@ -83,6 +89,7 @@ from source; releases use that build's JAR unchanged.
 - Entities in caves can be darkened by the sun shadow test.
 - No bloom/HDR.
 - OptiFine/Iris shader packs (e.g. Complementary) are not supported.
+- NeoForge (beta): stencil tests that NeoForge lets mods add to pipelines are not applied yet.
 - Sodium (and add-ons that need it, such as Iris and Sodium Extra) can't run alongside Ciderlight: Sodium's
   chunk renderer uses a multi-draw call the Metal backend doesn't provide. Fabric will refuse to launch and list them as incompatible; this is intentional.
   Remove them from the mods folder.
