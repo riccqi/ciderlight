@@ -459,6 +459,24 @@ static void mc_trace_command_buffer(id<MTLCommandBuffer> cb, double committed) {
     pthread_mutex_unlock(&mc_trace_mutex);
 }
 
+// Input to screen, for the hitch trace: from the oldest key or mouse event a frame took in to the moment that frame
+// reached the screen. Since the last mc_trace_input_take: the longest, how many were over 60 ms, and how many frames.
+static double mc_trace_input_max = 0;
+static int64_t mc_trace_input_slow = 0, mc_trace_input_frames = 0;
+static double mc_trace_input_carry = 0; // input of dropped frames, waiting for the next frame that is shown
+
+// Called with mc_trace_mutex held.
+static void mc_trace_input_shown(double inputTime, double presented) {
+    double latency = presented - inputTime;
+    mc_trace_input_max = MAX(mc_trace_input_max, latency);
+    if (latency > 0.060) mc_trace_input_slow++;
+    mc_trace_input_frames++;
+}
+
+EXPORT double mc_media_time(void) {
+    return CACurrentMediaTime();
+}
+
 static void mc_trace_watch_drawable(id<CAMetalDrawable> drawable) {
     [drawable addPresentedHandler:^(id<MTLDrawable> d) {
         double t = d.presentedTime; // 0 when the drawable was dropped instead of shown
@@ -469,6 +487,10 @@ static void mc_trace_watch_drawable(id<CAMetalDrawable> drawable) {
         } else {
             mc_trace_presented++;
             mc_pacing_shown++;
+            if (mc_trace_input_carry != 0) {
+                mc_trace_input_shown(mc_trace_input_carry, t);
+                mc_trace_input_carry = 0;
+            }
             if (mc_trace_last_presented != 0) {
                 double gap = t - mc_trace_last_presented;
                 mc_trace_present_gap_max = MAX(mc_trace_present_gap_max, gap);
@@ -480,6 +502,33 @@ static void mc_trace_watch_drawable(id<CAMetalDrawable> drawable) {
         }
         pthread_mutex_unlock(&mc_trace_mutex);
     }];
+}
+
+// inputTime: when the frame's oldest input happened, on the CACurrentMediaTime clock.
+EXPORT void mc_trace_frame_input(void *drawablePtr, double inputTime) {
+    id<CAMetalDrawable> drawable = BORROW(id<CAMetalDrawable>, drawablePtr);
+    [drawable addPresentedHandler:^(id<MTLDrawable> d) {
+        double t = d.presentedTime;
+        pthread_mutex_lock(&mc_trace_mutex);
+        if (t == 0) {
+            // Dropped: its input reaches the screen with the next frame that is shown (mc_trace_watch_drawable).
+            if (mc_trace_input_carry == 0 || inputTime < mc_trace_input_carry) mc_trace_input_carry = inputTime;
+        } else {
+            mc_trace_input_shown(inputTime, t);
+        }
+        pthread_mutex_unlock(&mc_trace_mutex);
+    }];
+}
+
+// out: [longest input to screen in seconds, frames over 60 ms, frames measured]
+EXPORT void mc_trace_input_take(double *out) {
+    pthread_mutex_lock(&mc_trace_mutex);
+    out[0] = mc_trace_input_max;
+    out[1] = (double)mc_trace_input_slow;
+    out[2] = (double)mc_trace_input_frames;
+    mc_trace_input_max = 0;
+    mc_trace_input_slow = mc_trace_input_frames = 0;
+    pthread_mutex_unlock(&mc_trace_mutex);
 }
 
 static id<CAMetalDrawable> mc_trace_next_drawable(CAMetalLayer *layer) {

@@ -76,6 +76,7 @@ public final class MetalNative {
         static MethodHandle passDrawIndexedIndirect, passDrawSectionsCulled, passDrawIndirect, layerSetup, layerConfigure, layerNextDrawable, layerPrefetchDrawable, present;
         static MethodHandle passSetBytes, passSetBuffer, passSetTexture, samplerCreateCompare, layerDisplayTiming, pacingTake;
         static MethodHandle profileEnable, profileLabel, profileTrace, profileReport, profilePeaks, traceStats, traceEnable;
+        static MethodHandle mediaTime, traceFrameInput, traceInputTake;
 
         static void init() {
             release = fn("mc_release", v(P), CRITICAL);
@@ -95,6 +96,9 @@ public final class MetalNative {
             profilePeaks = fn("mc_profile_peaks", v(ADDRESS, I));
             profileLabel = fn("mc_profile_label", v(ADDRESS));
             traceStats = fn("mc_trace_stats", v(ADDRESS));
+            mediaTime = fn("mc_media_time", r(JAVA_DOUBLE), CRITICAL);
+            traceFrameInput = fn("mc_trace_frame_input", v(P, JAVA_DOUBLE));
+            traceInputTake = fn("mc_trace_input_take", v(ADDRESS));
             textureCreate = fn("mc_texture_create", r(P, P, I, I, I, I, I, I));
             textureView = fn("mc_texture_view", r(P, P, I, I));
             textureBufferView = fn("mc_texture_buffer_view", r(P, P, JAVA_LONG, JAVA_LONG, I));
@@ -316,6 +320,35 @@ public final class MetalNative {
     public static void setLabel(long obj, String label) {
         try (Arena arena = Arena.ofConfined()) {
             Handles.setLabel.invokeExact(obj, arena.allocateFrom(label));
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    /** Now on Core Animation's clock (CACurrentMediaTime), in seconds: the clock presentedTime is on. */
+    public static double mediaTime() {
+        try {
+            return (double) Handles.mediaTime.invokeExact();
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    /** Measures, once the drawable reaches the screen, how long after inputTime (mediaTime clock) that was. */
+    public static void traceFrameInput(long drawable, double inputTime) {
+        try {
+            Handles.traceFrameInput.invokeExact(drawable, inputTime);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    /** Since the last call: the longest input to screen in seconds, frames over 60 ms, frames measured (mc_trace_input_take). */
+    public static void traceInputTake(double[] out) {
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = arena.allocate(JAVA_DOUBLE, 3);
+            Handles.traceInputTake.invokeExact(seg);
+            MemorySegment.copy(seg, JAVA_DOUBLE, 0L, out, 0, 3);
         } catch (Throwable t) {
             throw rethrow(t);
         }

@@ -82,6 +82,19 @@ public final class HitchTrace {
     private static long lastProcessCpu;
     private static final long[] gpu = new long[17];
     private static final long[] secondGpu = new long[17];
+    /** Input events read this frame and second, and the most time between one happening and the game reading it. */
+    private static long frameInputAge;
+    private static long secondInputAge;
+    private static int secondInputs;
+    /** SDL timestamp of the oldest input not yet in a frame that was presented, 0 for none. */
+    private static long pendingInput;
+    private static final double[] inputToScreen = new double[3];
+    /** Integrated server ticks this second (written on the server thread). */
+    private static long secondServerMax;
+    private static int secondServerTicks;
+    private static int secondServerSlow;
+    private static final long INPUT_LATE_NS = 50_000_000L;
+    private static final long SERVER_SLOW_NS = 50_000_000L;
 
     private HitchTrace() {
     }
@@ -151,6 +164,51 @@ public final class HitchTrace {
     static void mainSections(final int offered, final int drawn) {
         secondMainOffered += offered;
         secondMainDrawn += drawn;
+    }
+
+    /**
+     * A key, mouse button, wheel or mouse movement event is being read; timestamp is when it happened (SDL_GetTicksNS
+     * clock). How long it waited to be read, and later how long until a frame with it reached the screen, are what the
+     * player feels as input lag even when every frame is quick.
+     */
+    public static void input(final long timestamp) {
+        if (!active || timestamp == 0L) {
+            return;
+        }
+        long age = org.lwjgl.sdl.SDLTimer.SDL_GetTicksNS() - timestamp;
+        frameInputAge = Math.max(frameInputAge, age);
+        secondInputAge = Math.max(secondInputAge, age);
+        secondInputs++;
+        if (pendingInput == 0L || timestamp < pendingInput) {
+            pendingInput = timestamp;
+        }
+    }
+
+    /** For a frame about to be presented: when its oldest input happened, on MetalNative.mediaTime's clock, or 0. */
+    static double takeInput() {
+        if (pendingInput == 0L) {
+            return 0.0;
+        }
+        long age = org.lwjgl.sdl.SDLTimer.SDL_GetTicksNS() - pendingInput;
+        pendingInput = 0L;
+        return MetalNative.mediaTime() - age / 1e9;
+    }
+
+    /** One tick of the integrated server took this long (server thread). */
+    public static void serverTick(final long ns) {
+        if (!active) {
+            return;
+        }
+        synchronized (HitchTrace.class) {
+            secondServerMax = Math.max(secondServerMax, ns);
+            secondServerTicks++;
+            if (ns >= SERVER_SLOW_NS) {
+                secondServerSlow++;
+            }
+        }
+        if (ns >= 2 * SERVER_SLOW_NS) {
+            note(String.format(Locale.ROOT, "server tick %.0fms", ns / 1e6));
+        }
     }
 
     static void upload(final long bytes) {
@@ -227,6 +285,11 @@ public final class HitchTrace {
         lastGc = gcTime();
         lastProcessCpu = processCpu();
         MetalNative.traceStats(gpu); // discard what piled up before the window
+        MetalNative.traceInputTake(inputToScreen);
+        pendingInput = 0L;
+        frameInputAge = 0L;
+        secondInputAge = 0L;
+        secondInputs = 0;
         MetalNative.profileTrace(true);
         MetalNative.profileReport();
         MetalNative.profilePeaks();
@@ -313,6 +376,10 @@ public final class HitchTrace {
         secondBufferBytes += frameBufferBytes;
         secondBuffers += frameBuffers;
 
+        if (frameInputAge >= INPUT_LATE_NS) {
+            note(String.format(Locale.ROOT, "input read %.0fms after it happened", ms(frameInputAge)));
+        }
+        frameInputAge = 0L;
         String events;
         synchronized (HitchTrace.class) {
             events = frameEvents.toString();
@@ -365,6 +432,17 @@ public final class HitchTrace {
                 + " heap %dMB",
             secondUploadBytes / 1048576.0, secondBuffers, secondBufferBytes / 1048576.0, ms(secondGpu[1]) / Math.max(secondGpu[0], 1L), ms(secondGpu[2]),
             secondGpu[0], ms(secondGpu[3]), ms(secondGpu[7]), secondGpu[8], (runtime.totalMemory() - runtime.freeMemory()) >> 20));
+        MetalNative.traceInputTake(inputToScreen);
+        s.append(String.format(Locale.ROOT, " | input: %d events, read max %.1fms after they happened, to screen max %.1fms (%d of %d frames over 60ms)",
+            secondInputs, ms(secondInputAge), inputToScreen[0] * 1e3, (int)inputToScreen[1], (int)inputToScreen[2]));
+        synchronized (HitchTrace.class) {
+            s.append(String.format(Locale.ROOT, " | server: %d ticks, max %.1fms, %d over 50ms", secondServerTicks, ms(secondServerMax), secondServerSlow));
+            secondServerTicks = 0;
+            secondServerSlow = 0;
+            secondServerMax = 0L;
+        }
+        secondInputs = 0;
+        secondInputAge = 0L;
         if (secondGpu[16] > 0L) {
             s.append(" | frames on screen for");
             for (int i = 0; i < 6; i++) {

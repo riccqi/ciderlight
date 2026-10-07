@@ -17,7 +17,9 @@
     "VideoSettingsScreenMixin",
     "OptionsMixin",
     "RenderPipelinesMixin",
-    "BackupConfirmScreenAccessor"
+    "BackupConfirmScreenAccessor",
+    "SDLEventHandlerMixin",
+    "MinecraftServerMixin"
   ],
   "injectors": {
     "defaultRequire": 1
