@@ -198,6 +198,12 @@ fragment float4 particle_lit_fragment(LightOut in [[stage_in]],
 // Clouds have no vertex buffer: like vanilla's clouds.vsh, each quad's corners come from the vertex index and a
 // buffer of packed cells (x, z, direction and flags), placed with CloudInfo's offset and cell size relative to the
 // camera. Here they are projected from the sun into the shadow map instead of to the screen.
+//
+// Vanilla builds that mesh for the camera: walls only on the sides facing it, tops only when it is above the clouds,
+// and a second, inside-out copy of every face for the cells around it. Drawn as they are, the shadow would darken
+// and lighten as the camera moves (the cells next to it shading twice as much, popping in as it steps under them).
+// So only one horizontal face per cell casts: the underside, or the top while the camera is above the clouds (then
+// vanilla leaves the undersides out), and it dims the light as much as the whole cloud does.
 
 struct CloudInfo {
     float4 CloudColor;
@@ -221,6 +227,10 @@ static float4 cloud_light_position(uint vid, constant DynamicTransforms &dyn, co
     bool inside = (flags & 16) != 0;
     cellX = (cellX << 1) | ((flags & 128) >> 7);
     cellZ = (cellZ << 1) | ((flags & 64) >> 6);
+    bool above = float3(cloud.CloudOffset).y + float3(cloud.CellSize).y < 0.0;
+    if (inside || !(direction == 0 || (direction == 1 && above))) {
+        return float4(2.0, 2.0, 2.0, 1.0); // outside the map: the face is not drawn
+    }
     int corner = direction * 4 + (inside ? 3 - quadVertex : quadVertex);
     float3 faceVertex = float3((0xF03CC3 >> corner) & 1, (0x6666F0 >> corner) & 1, (0xC3F066 >> corner) & 1);
     float3 cellSize = float3(cloud.CellSize);
@@ -240,11 +250,12 @@ vertex CloudShadowOut cloud_shadow_vertex(uint vid [[vertex_id]],
 }
 
 // Clouds are not solid. They go into the transmission map (rgb multiplied, alpha the nearest depth) as a grey
-// filter. Light crosses two faces of a cloud, so the shadow lets about 0.62 of the light through.
-constant float CLOUD_FACE_TRANSMISSION = 0.79;
+// filter. Light crosses two faces of a cloud, 0.79 each, so a cloud lets about 0.62 of the light through; the one
+// face that casts (cloud_light_position) stands for the whole cloud.
+constant float CLOUD_TRANSMISSION = 0.62;
 
 fragment float4 cloud_shadow_fragment(CloudShadowOut in [[stage_in]]) {
-    return float4(float3(CLOUD_FACE_TRANSMISSION), in.position.z);
+    return float4(float3(CLOUD_TRANSMISSION), in.position.z);
 }
 
 // --- cloud shadow map ---
@@ -263,5 +274,5 @@ vertex CloudShadowOut cloud_map_vertex(uint vid [[vertex_id]],
 }
 
 fragment float4 cloud_map_fragment(CloudShadowOut in [[stage_in]]) {
-    return float4(CLOUD_FACE_TRANSMISSION);
+    return float4(CLOUD_TRANSMISSION);
 }
