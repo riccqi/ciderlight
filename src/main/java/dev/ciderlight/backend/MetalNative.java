@@ -76,7 +76,7 @@ public final class MetalNative {
         static MethodHandle passDrawIndexedIndirect, passDrawSectionsCulled, passDrawIndirect, layerSetup, layerConfigure, layerNextDrawable, layerPrefetchDrawable, present;
         static MethodHandle passSetBytes, passSetBuffer, passSetTexture, samplerCreateCompare, layerDisplayTiming, pacingTake;
         static MethodHandle profileEnable, profileLabel, profileTrace, profileReport, profilePeaks, traceStats, traceEnable;
-        static MethodHandle mediaTime, traceFrameInput, traceFrameRead, traceInputTake;
+        static MethodHandle mediaTime, traceFrameInput, traceFrameRead, traceInputTake, frameTiming;
 
         static void init() {
             release = fn("mc_release", v(P), CRITICAL);
@@ -100,6 +100,7 @@ public final class MetalNative {
             traceFrameInput = fn("mc_trace_frame_input", v(P, JAVA_DOUBLE));
             traceFrameRead = fn("mc_trace_frame_read", v(P, JAVA_DOUBLE));
             traceInputTake = fn("mc_trace_input_take", v(ADDRESS));
+            frameTiming = fn("mc_frame_timing", v(ADDRESS));
             textureCreate = fn("mc_texture_create", r(P, P, I, I, I, I, I, I));
             textureView = fn("mc_texture_view", r(P, P, I, I));
             textureBufferView = fn("mc_texture_buffer_view", r(P, P, JAVA_LONG, JAVA_LONG, I));
@@ -321,6 +322,20 @@ public final class MetalNative {
     public static void setLabel(long obj, String label) {
         try (Arena arena = Arena.ofConfined()) {
             Handles.setLabel.invokeExact(obj, arena.allocateFrom(label));
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    /**
+     * The latest committed frame's index and commit time, then the latest frame the GPU finished: its index and when it
+     * started and ended on the GPU (mc_frame_timing; seconds on mediaTime's clock).
+     */
+    public static void frameTiming(double[] out) {
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = arena.allocate(JAVA_DOUBLE, 5);
+            Handles.frameTiming.invokeExact(seg);
+            MemorySegment.copy(seg, JAVA_DOUBLE, 0L, out, 0, 5);
         } catch (Throwable t) {
             throw rethrow(t);
         }

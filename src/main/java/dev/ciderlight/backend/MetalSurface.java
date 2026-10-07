@@ -26,6 +26,7 @@ public class MetalSurface implements GpuSurfaceBackend {
     private long drawable;
     private boolean vsync = true;
     private final FramePacer pacer = new FramePacer();
+    private final JustInTimeInput inputTiming = new JustInTimeInput();
 
     MetalSurface(final MetalDevice device, final long windowHandle) {
         this.device = device;
@@ -100,11 +101,15 @@ public class MetalSurface implements GpuSurfaceBackend {
             // Wait for the display here, between frames, instead of in acquireNextTexture: by then the next frame has
             // already read the mouse and keyboard, so every frame spent waiting there was a frame of input lag.
             MetalNative.layerPrefetchDrawable(this.layer, VSYNC_TIMEOUT_MS);
-            this.pacer.frameStart();
         } else {
             // Uncapped: fetch the next frame's drawable in the background while that frame is built, so a drawable that
             // frees up while the GPU is still busy with this frame is ready for it, without the render thread waiting.
             MetalNative.layerPrefetchDrawable(this.layer, 0);
+        }
+        // When the GPU is the limit, the next frame reads input only as it is about to be needed.
+        this.inputTiming.beforeNextFrame();
+        if (this.vsync) {
+            this.pacer.frameStart();
         }
         if (HitchTrace.ENABLED) {
             HitchTrace.endFrame();

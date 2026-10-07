@@ -1016,6 +1016,23 @@ static id<MTLBlitCommandEncoder> mc_blit(MCFrame *frame, NSString *kind) {
 }
 
 // Commits the frame; GPU completion advances the context's completed index to `index`.
+// For reading input just in time (MetalSurface): when the latest frame was committed, and for the latest one the GPU
+// finished, when it started and ended on the GPU (CACurrentMediaTime clock, seconds).
+static pthread_mutex_t mc_timing_mutex = PTHREAD_MUTEX_INITIALIZER;
+static double mc_timing_committed = 0, mc_timing_gpu_start = 0, mc_timing_gpu_end = 0;
+static uint64_t mc_timing_committed_index = 0, mc_timing_done_index = 0;
+
+// out: [committed index, committed at, finished index, its GPU start, its GPU end]
+EXPORT void mc_frame_timing(double *out) {
+    pthread_mutex_lock(&mc_timing_mutex);
+    out[0] = (double)mc_timing_committed_index;
+    out[1] = mc_timing_committed;
+    out[2] = (double)mc_timing_done_index;
+    out[3] = mc_timing_gpu_start;
+    out[4] = mc_timing_gpu_end;
+    pthread_mutex_unlock(&mc_timing_mutex);
+}
+
 EXPORT void mc_frame_commit(void *framePtr, uint64_t index) {
     @autoreleasepool {
         MCFrame *frame = (MCFrame *)CFBridgingRelease(framePtr);
@@ -1029,12 +1046,23 @@ EXPORT void mc_frame_commit(void *framePtr, uint64_t index) {
                 NSLog(@"Ciderlight: command buffer error: %@", cb.error);
             }
             if (mc_trace_on) mc_trace_command_buffer(cb, committed);
+            pthread_mutex_lock(&mc_timing_mutex);
+            if (index > mc_timing_done_index && cb.GPUEndTime > 0) {
+                mc_timing_done_index = index;
+                mc_timing_gpu_start = cb.GPUStartTime;
+                mc_timing_gpu_end = cb.GPUEndTime;
+            }
+            pthread_mutex_unlock(&mc_timing_mutex);
             if (samples != nil) mc_profile_finish(samples, passLabels, cb);
             pthread_mutex_lock(&ctx->mutex);
             if (index > ctx->completedIndex) ctx->completedIndex = index;
             pthread_cond_broadcast(&ctx->cond);
             pthread_mutex_unlock(&ctx->mutex);
         }];
+        pthread_mutex_lock(&mc_timing_mutex);
+        mc_timing_committed_index = index;
+        mc_timing_committed = committed;
+        pthread_mutex_unlock(&mc_timing_mutex);
         [frame.commandBuffer commit];
     }
 }
