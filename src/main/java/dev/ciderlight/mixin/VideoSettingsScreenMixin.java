@@ -25,16 +25,20 @@ public abstract class VideoSettingsScreenMixin extends OptionsSubScreen {
     private static final Component CIDERLIGHT_BUTTON = Component.literal("Ciderlight...");
     @Unique
     private static final Component CIDERLIGHT_TOOLTIP = Component.literal(
-        "Shaders, shadows, waving plants, water reflections and the world's render scale.");
+        "Shaders, shadows, waving plants, water reflections, ambient occlusion and the world's render scale.");
 
     private VideoSettingsScreenMixin(final Screen lastScreen, final Options options, final Component title) {
         super(lastScreen, options, title);
     }
 
+    /**
+     * Just before qualityOptions is called: addOptions adds the graphics preset and then the quality options, so this
+     * lands between them however many rows come before.
+     */
     @Inject(
         method = "addOptions",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/components/OptionsList;addBig(Lnet/minecraft/client/OptionInstance;)V",
-            ordinal = 1, shift = At.Shift.AFTER)
+        at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/gui/screens/options/VideoSettingsScreen;qualityOptions(Lnet/minecraft/client/Options;)[Lnet/minecraft/client/OptionInstance;")
     )
     private void ciderlight$addSettingsButton(final CallbackInfo ci) {
         if (!ShaderSetting.available()) {

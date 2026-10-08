@@ -57,7 +57,8 @@ Everything applies after a restart and is saved in `config/ciderlight.properties
 JVM `-D` overrides: `ciderlight.quality=low|high`, `ciderlight.shaders=false`, `ciderlight.renderScale=<0.25–1>`,
 `ciderlight.shadowSize`, `ciderlight.shadowDistance`, `ciderlight.fogDistance`, `ciderlight.waterReflections=false`,
 `ciderlight.waving=false`, `ciderlight.ao=false`, `ciderlight.shadows=false`, `ciderlight.framePacing=true`, `ciderlight.debug=true`,
-`ciderlight.disable=true` (fall back to vanilla backends).
+`ciderlight.disable=true` (fall back to vanilla backends). An override wins over the settings page, which greys that
+option out.
 
 ## Installing
 
