@@ -52,7 +52,8 @@ Open **Options > Video Settings > Ciderlight...** (under the graphics preset):
   skips the shadow maps and light shafts, which is the biggest saving.
 - **Render Scale**: the world's resolution, Auto (the quality's own) or 50 to 100%.
 
-Everything applies after a restart and is saved in `config/ciderlight.properties`.
+Shadows and Ambient Occlusion apply at once; everything else applies after a restart. All of it is saved in
+`config/ciderlight.properties`.
 
 JVM `-D` overrides: `ciderlight.quality=low|high`, `ciderlight.shaders=false`, `ciderlight.renderScale=<0.25–1>`,
 `ciderlight.shadowSize`, `ciderlight.shadowDistance`, `ciderlight.fogDistance`, `ciderlight.waterReflections=false`,

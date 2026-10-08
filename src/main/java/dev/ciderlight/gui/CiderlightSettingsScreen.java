@@ -22,8 +22,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * Ciderlight's settings, opened from the Ciderlight button in Video Settings (VideoSettingsScreenMixin): the Shaders
  * quality, the effects that can be turned off one by one (ShaderToggle) and the world's render scale. Everything here
- * is saved to config/ciderlight.properties and applies after restarting the game, as the shader pipelines are built
- * with it; a changed value says so in its tooltip, and Video Settings shows its restart notice. An option set by its
+ * is saved to config/ciderlight.properties. Shadows and Ambient Occlusion apply at once; the rest apply after
+ * restarting the game, as the shader pipelines are built with them, so a changed value says so in its tooltip and
+ * Video Settings shows its restart notice. An option set by its
  * -Dciderlight.* override is greyed out, as the override would win after the restart.
  */
 public class CiderlightSettingsScreen extends OptionsSubScreen {
