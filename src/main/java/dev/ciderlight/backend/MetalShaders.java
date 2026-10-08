@@ -94,12 +94,17 @@ public final class MetalShaders {
     private static final boolean VL_HISTORY = !"false".equals(System.getProperty("ciderlight.vlHistory"));
 
     private static final boolean SHADOW_HISTORY = !"false".equals(System.getProperty("ciderlight.shadowHistory"));
-    /** Leaves and plants sway in the wind (-Dciderlight.waving=false to turn off). */
-    private static final boolean WAVING = !"false".equals(System.getProperty("ciderlight.waving"));
-    /** Water mirrors the scene around it (screen-space reflections); -Dciderlight.waterReflections=false: the sky only. */
-    private static final boolean WATER_REFLECTIONS = !"false".equals(System.getProperty("ciderlight.waterReflections"));
+    /** Leaves and plants sway in the wind (Waving Plants on the settings page, -Dciderlight.waving). */
+    private static final boolean WAVING = ShaderToggle.WAVING.enabled();
+    /** Water mirrors the scene around it (screen-space reflections); off: the sky only (-Dciderlight.waterReflections). */
+    private static final boolean WATER_REFLECTIONS = ShaderToggle.WATER_REFLECTIONS.enabled();
     /** Screen-space ambient occlusion (GTAO); -Dciderlight.ao=false disables it for comparison. */
-    private static final boolean AO = !"false".equals(System.getProperty("ciderlight.ao"));
+    private static final boolean AO = ShaderToggle.AMBIENT_OCCLUSION.enabled();
+    /**
+     * Sun and moon shadow maps (-Dciderlight.shadows). Off, they are never drawn and stay invalid, as at night when the
+     * sun is down: surfaces count as lit (shadow_visibility) and the air gets ambient fog but no shafts (air_visibility).
+     */
+    private static final boolean SHADOWS = ShaderToggle.SHADOWS.enabled();
 
     static final int KIND_NONE = 0;
     static final int KIND_SOLID = 1;
@@ -1151,8 +1156,8 @@ public final class MetalShaders {
         this.prevViewProj.set(viewProj);
         this.prevCameraPos = cameraPos;
         this.shadowHistoryIndex = 1 - this.shadowHistoryIndex;
-        casterView = this.sunActive ? new CasterView(new Matrix4f(viewProj), new Vector3f(this.previousLight)) : null;
-        if (this.sunActive) {
+        casterView = this.sunActive && SHADOWS ? new CasterView(new Matrix4f(viewProj), new Vector3f(this.previousLight)) : null;
+        if (this.sunActive && SHADOWS) {
             this.renderShadowMap(frame);
             this.renderFarShadowMap(frame);
         } else {
@@ -2394,7 +2399,7 @@ public final class MetalShaders {
             if (camera.entity() instanceof LivingEntity living && living.hasEffect(MobEffects.NIGHT_VISION)) waterDensity *= 0.6F;
         }
         this.sunActive = strength > 0.0F;
-        castersWanted = this.sunActive;
+        castersWanted = this.sunActive && SHADOWS;
         casterWaterSurface = underwater ? waterSurface : Double.NaN;
         long now = System.nanoTime();
         float dt = this.lastFrameNanos == 0L ? 0.0F : Math.min((now - this.lastFrameNanos) / 1e9F, 0.25F);
