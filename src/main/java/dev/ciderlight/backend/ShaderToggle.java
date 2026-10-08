@@ -4,41 +4,45 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The on/off effects on the Ciderlight settings page (CiderlightSettingsScreen), all on by default. Each is saved to
- * config/ciderlight.properties under its key and, like the Shaders choice, takes effect at the next start: the
- * pipelines are built with it. -Dciderlight.KEY=true|false still overrides the saved value.
+ * config/ciderlight.properties under its key. Shadows and Ambient Occlusion are live: MetalShaders checks them every
+ * frame. Waving Plants and Water Reflections are compiled into the pipelines, so like the Shaders choice they take
+ * effect at the next start. -Dciderlight.KEY=true|false still overrides the saved value.
  */
 public enum ShaderToggle {
-    SHADOWS("shadows", "Shadows",
+    SHADOWS("shadows", "Shadows", true,
         "The sun and moon cast shadows, and light shafts form in the haze. Off skips the shadow maps, the biggest single "
             + "cost on the GPU, and lights everything as if it stood in the open."),
-    WAVING("waving", "Waving Plants", "Leaves, grass, flowers and crops sway in the wind."),
-    WATER_REFLECTIONS("waterReflections", "Water Reflections",
+    WAVING("waving", "Waving Plants", false, "Leaves, grass, flowers and crops sway in the wind."),
+    WATER_REFLECTIONS("waterReflections", "Water Reflections", false,
         "Water mirrors the hills, trees and buildings around it. Off: water reflects the sky only, which costs less."),
-    AMBIENT_OCCLUSION("ao", "Ambient Occlusion", "Soft shade in corners, under ledges and between blocks.");
+    AMBIENT_OCCLUSION("ao", "Ambient Occlusion", true, "Soft shade in corners, under ledges and between blocks.");
 
     /** The property key, both in ciderlight.properties and as -Dciderlight.KEY. */
     public final String key;
     public final String label;
     public final String description;
-    /** What this session is running with. */
+    /** Applies as soon as it is chosen, not at the next start. */
+    public final boolean live;
+    /** What this session started with. */
     private final boolean running;
     /** Set by -Dciderlight.KEY, which wins over the settings page. */
     private final boolean forced;
-    /** Chosen on the settings page since the game started; applies at the next start. */
-    private @Nullable Boolean chosen;
+    /** Chosen on the settings page since the game started: applies now if live, otherwise at the next start. */
+    private volatile @Nullable Boolean chosen;
 
-    ShaderToggle(final String key, final String label, final String description) {
+    ShaderToggle(final String key, final String label, final boolean live, final String description) {
         this.key = key;
         this.label = label;
+        this.live = live;
         this.description = description;
         String override = System.getProperty("ciderlight." + key);
         this.forced = override != null;
         this.running = !"false".equals(override != null ? override : CiderlightConfig.saved(key));
     }
 
-    /** Whether this session runs with the effect. */
+    /** Whether this session runs with the effect: the latest choice if live, otherwise what the game started with. */
     public boolean enabled() {
-        return this.running;
+        return this.live ? this.current() : this.running;
     }
 
     /** What the next start will run with. */
@@ -52,7 +56,7 @@ public enum ShaderToggle {
     }
 
     public boolean restartRequired() {
-        return !this.forced && this.chosen != null && this.chosen != this.running;
+        return !this.live && !this.forced && this.chosen != null && this.chosen != this.running;
     }
 
     public void choose(final boolean on) {

@@ -98,13 +98,6 @@ public final class MetalShaders {
     private static final boolean WAVING = ShaderToggle.WAVING.enabled();
     /** Water mirrors the scene around it (screen-space reflections); off: the sky only (-Dciderlight.waterReflections). */
     private static final boolean WATER_REFLECTIONS = ShaderToggle.WATER_REFLECTIONS.enabled();
-    /** Screen-space ambient occlusion (GTAO; Ambient Occlusion on the settings page, -Dciderlight.ao). */
-    private static final boolean AO = ShaderToggle.AMBIENT_OCCLUSION.enabled();
-    /**
-     * Sun and moon shadow maps (-Dciderlight.shadows). Off, they are never drawn and stay invalid, as at night when the
-     * sun is down: surfaces count as lit (shadow_visibility) and the air gets ambient fog but no shafts (air_visibility).
-     */
-    private static final boolean SHADOWS = ShaderToggle.SHADOWS.enabled();
 
     static final int KIND_NONE = 0;
     static final int KIND_SOLID = 1;
@@ -403,6 +396,14 @@ public final class MetalShaders {
     private int mainHeight;
     private boolean shadowValid;
     private boolean sunActive;
+    /**
+     * Sun and moon shadow maps this frame (Shadows on the settings page, -Dciderlight.shadows; latchLiveToggles). Off,
+     * they are never drawn and stay invalid, as at night when the sun is down: surfaces count as lit
+     * (shadow_visibility) and the air gets ambient fog but no shafts (air_visibility).
+     */
+    private boolean shadows = ShaderToggle.SHADOWS.enabled();
+    /** Screen-space ambient occlusion (GTAO) this frame (Ambient Occlusion on the settings page, -Dciderlight.ao). */
+    private boolean ao = ShaderToggle.AMBIENT_OCCLUSION.enabled();
     private int debugFrames;
     private float eyeSky = 1.0F;
     private long lastFrameNanos;
@@ -485,7 +486,8 @@ public final class MetalShaders {
         this.prebuild(SHADOW_HISTORY_STATE, this.fullscreen("shadow_history_fragment", SHADOW_HISTORY_FORMAT, SHADOW_HISTORY_STATE));
         this.prebuild(VOLUMETRIC_STATE, this::buildVolumetricState);
         this.prebuild(FOG_NOISE_STATE, this.fullscreen("air_noise_table_fragment", EXTINCTION_FORMAT, FOG_NOISE_STATE));
-        if (AO) {
+        // Built unless -Dciderlight.ao=false rules it out, so turning it on in the settings doesn't stall a frame.
+        if (this.ao || !ShaderToggle.AMBIENT_OCCLUSION.forced()) {
             this.prebuild(AO_STATE, this.fullscreen("ao_fragment", AO_FORMAT, AO_STATE));
             this.prebuild(AO_FILTER_STATE, this.fullscreen("ao_filter_fragment", AO_FORMAT, AO_FILTER_STATE));
         }
@@ -1007,10 +1009,27 @@ public final class MetalShaders {
         this.mainWidth = width;
         this.mainHeight = height;
         this.opaqueSnapshotThisFrame = false;
+        this.latchLiveToggles();
         this.ensureShadowHistory();
         this.ensureAmbientOcclusion();
         this.updateFrameData();
         this.renderFrameConstants(frame);
+    }
+
+    /** Picks up Shadows and Ambient Occlusion switched on the settings page, once per frame so no frame mixes them. */
+    private void latchLiveToggles() {
+        boolean shadows = ShaderToggle.SHADOWS.enabled();
+        if (shadows != this.shadows) {
+            // The shadow and fog histories hold the other setting's light. Back on, the maps start over as at sunrise.
+            this.invalidateHistory();
+            this.invalidateShadowMaps();
+            this.shadows = shadows;
+        }
+        boolean ao = ShaderToggle.AMBIENT_OCCLUSION.enabled();
+        if (ao != this.ao) {
+            this.aoHistoryValid = false;
+            this.ao = ao;
+        }
     }
 
     private void renderFrameConstants(final long frame) {
@@ -1038,7 +1057,7 @@ public final class MetalShaders {
         MetalNative.passSetTexture(enc, FRAME_INDEX, this.shadowTexture(), this.shadowSampler, MetalConst.STAGE_FRAGMENT);
         MetalNative.passSetTexture(enc, SHADOW_COLOR_INDEX, this.shadowColorTexture(), 0L, MetalConst.STAGE_FRAGMENT);
         MetalNative.passSetTexture(enc, SHADOW_HISTORY_INDEX, this.shadowHistoryTextures[1 - this.shadowHistoryIndex], 0L, MetalConst.STAGE_FRAGMENT);
-        if (AO) {
+        if (this.ao) {
             MetalNative.passSetTexture(enc, AO_INDEX, this.aoTextures[1 - this.aoIndex], 0L, MetalConst.STAGE_FRAGMENT);
         }
         if (this.opaqueColor != 0L) {
@@ -1148,7 +1167,7 @@ public final class MetalShaders {
         }
         this.renderShadowHistory(frame);
         this.volumetric(frame);
-        if (AO) {
+        if (this.ao) {
             this.ambientOcclusion(frame);
         }
         this.composite(frame);
@@ -1156,8 +1175,8 @@ public final class MetalShaders {
         this.prevViewProj.set(viewProj);
         this.prevCameraPos = cameraPos;
         this.shadowHistoryIndex = 1 - this.shadowHistoryIndex;
-        casterView = this.sunActive && SHADOWS ? new CasterView(new Matrix4f(viewProj), new Vector3f(this.previousLight)) : null;
-        if (this.sunActive && SHADOWS) {
+        casterView = this.sunActive && this.shadows ? new CasterView(new Matrix4f(viewProj), new Vector3f(this.previousLight)) : null;
+        if (this.sunActive && this.shadows) {
             this.renderShadowMap(frame);
             this.renderFarShadowMap(frame);
         } else {
@@ -1757,7 +1776,7 @@ public final class MetalShaders {
     }
 
     private void ensureAmbientOcclusion() {
-        if (!AO) {
+        if (!this.ao) {
             return;
         }
         // Half resolution up to about 1600 rows, a third above (ao_scale in ao.metal); coarser at low quality.
@@ -1854,7 +1873,7 @@ public final class MetalShaders {
         MetalNative.passSetTexture(enc, 3, this.shadowColorTexture(), 0L, MetalConst.STAGE_FRAGMENT);
         MetalNative.passSetTexture(enc, 4, this.shadowHistoryTextures[1 - this.shadowHistoryIndex], 0L, MetalConst.STAGE_FRAGMENT);
         MetalNative.passSetTexture(enc, 5, this.extinctionTextures[this.volumetricIndex], 0L, MetalConst.STAGE_FRAGMENT);
-        if (AO) {
+        if (this.ao) {
             MetalNative.passSetTexture(enc, 6, this.aoTextures[this.aoIndex], 0L, MetalConst.STAGE_FRAGMENT);
         }
         MetalNative.passSetTexture(enc, 7, this.cloudMapTexture(), 0L, MetalConst.STAGE_FRAGMENT);
@@ -2399,7 +2418,7 @@ public final class MetalShaders {
             if (camera.entity() instanceof LivingEntity living && living.hasEffect(MobEffects.NIGHT_VISION)) waterDensity *= 0.6F;
         }
         this.sunActive = strength > 0.0F;
-        castersWanted = this.sunActive && SHADOWS;
+        castersWanted = this.sunActive && this.shadows;
         casterWaterSurface = underwater ? waterSurface : Double.NaN;
         long now = System.nanoTime();
         float dt = this.lastFrameNanos == 0L ? 0.0F : Math.min((now - this.lastFrameNanos) / 1e9F, 0.25F);
@@ -2557,7 +2576,7 @@ public final class MetalShaders {
         this.sampleFrame.set(ValueLayout.JAVA_FLOAT, 452, this.volumetricHistory && VL_HISTORY ? 1.0F : 0.0F);
         this.sampleFrame.set(ValueLayout.JAVA_FLOAT, 456, this.shadowHistoryValid && SHADOW_HISTORY ? 1.0F : 0.0F);
         // fogParams.w: 0 no ambient occlusion, 1 enabled, 2 enabled with a valid previous frame to reproject.
-        this.sampleFrame.set(ValueLayout.JAVA_FLOAT, 380, AO ? (this.aoHistoryValid ? 2.0F : 1.0F) : 0.0F);
+        this.sampleFrame.set(ValueLayout.JAVA_FLOAT, 380, this.ao ? (this.aoHistoryValid ? 2.0F : 1.0F) : 0.0F);
         this.sampleFrame.set(ValueLayout.JAVA_FLOAT, AO_PARAMS_OFFSET, (float)this.aoDivisor);
         // Light sources in players' hands light what is around them (held_light in frame.metal): the nearest
         // HELD_LIGHTS of them, each eased as its player switches items.
