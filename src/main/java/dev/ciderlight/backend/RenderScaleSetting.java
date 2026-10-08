@@ -45,8 +45,13 @@ public enum RenderScaleSetting {
         return chosen != null ? chosen : SAVED;
     }
 
+    /** Whether -Dciderlight.renderScale sets it, so a choice here changes nothing until that is removed. */
+    public static boolean forced() {
+        return System.getProperty("ciderlight.renderScale") != null;
+    }
+
     public static boolean restartRequired() {
-        return chosen != null && chosen != SAVED;
+        return !forced() && chosen != null && chosen != SAVED;
     }
 
     public static void choose(final RenderScaleSetting setting) {

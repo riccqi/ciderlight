@@ -98,7 +98,7 @@ public final class MetalShaders {
     private static final boolean WAVING = ShaderToggle.WAVING.enabled();
     /** Water mirrors the scene around it (screen-space reflections); off: the sky only (-Dciderlight.waterReflections). */
     private static final boolean WATER_REFLECTIONS = ShaderToggle.WATER_REFLECTIONS.enabled();
-    /** Screen-space ambient occlusion (GTAO); -Dciderlight.ao=false disables it for comparison. */
+    /** Screen-space ambient occlusion (GTAO; Ambient Occlusion on the settings page, -Dciderlight.ao). */
     private static final boolean AO = ShaderToggle.AMBIENT_OCCLUSION.enabled();
     /**
      * Sun and moon shadow maps (-Dciderlight.shadows). Off, they are never drawn and stay invalid, as at night when the

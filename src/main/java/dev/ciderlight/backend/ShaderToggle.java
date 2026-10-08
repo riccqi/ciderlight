@@ -22,6 +22,8 @@ public enum ShaderToggle {
     public final String description;
     /** What this session is running with. */
     private final boolean running;
+    /** Set by -Dciderlight.KEY, which wins over the settings page. */
+    private final boolean forced;
     /** Chosen on the settings page since the game started; applies at the next start. */
     private @Nullable Boolean chosen;
 
@@ -29,8 +31,9 @@ public enum ShaderToggle {
         this.key = key;
         this.label = label;
         this.description = description;
-        String forced = System.getProperty("ciderlight." + key);
-        this.running = !"false".equals(forced != null ? forced : CiderlightConfig.saved(key));
+        String override = System.getProperty("ciderlight." + key);
+        this.forced = override != null;
+        this.running = !"false".equals(override != null ? override : CiderlightConfig.saved(key));
     }
 
     /** Whether this session runs with the effect. */
@@ -43,8 +46,13 @@ public enum ShaderToggle {
         return this.chosen != null ? this.chosen : this.running;
     }
 
+    /** Whether -Dciderlight.KEY sets it, so a choice here changes nothing until that is removed. */
+    public boolean forced() {
+        return this.forced;
+    }
+
     public boolean restartRequired() {
-        return this.chosen != null && this.chosen != this.running;
+        return !this.forced && this.chosen != null && this.chosen != this.running;
     }
 
     public void choose(final boolean on) {
