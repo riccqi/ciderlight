@@ -33,13 +33,13 @@ Vanilla resource packs keep working.
 
 ## Shader settings
 
-Go to **Options > Video Settings**. The first button under the graphics preset is **Shaders**:
+Go to **Options > Video Settings** and click **Ciderlight...** under the graphics preset. **Shaders** switches between:
 
 - **High**: everything at full quality.
 - **Low**: smaller shadow maps, coarser fog, and the world drawn at a lower resolution. Much lighter on the graphics chip, with most of the look.
 - **Off**: Minecraft's normal look, still drawn with Metal.
 
-The change applies after you restart the game. Pick **Low** on A-series or lower-tier M chips, and **High** on everything else. A-series Macs and the plain M1, M2, M3 and M4 start on Low by themselves; all others start on High.
+Below it you can turn **Shadows**, **Waving Plants**, **Water Reflections** and **Ambient Occlusion** off one by one (Shadows off saves the most), and set the **Render Scale**. Changes apply after you restart the game. Pick **Low** on A-series or lower-tier M chips, and **High** on everything else. A-series Macs and the plain M1, M2, M3 and M4 start on Low by themselves; all others start on High.
 
 ## Installing
 

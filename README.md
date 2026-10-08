@@ -43,14 +43,20 @@ Visual references: Complementary Shaders and Bliss (Chocapic13 edit). All Metal 
 
 ### Settings
 
-Choose in **Options > Video Settings > Quality & Performance > Shaders**: Off (Metal renderer, vanilla look), Low or
-High. Applies after a restart. A-series GPUs and the plain M1, M2, M3 and M4 default to Low (smaller shadow maps, fewer samples,
-lighter water reflections, world drawn at about two thirds resolution); everything else defaults to High. The choice
-is saved in `config/ciderlight.properties`.
+Open **Options > Video Settings > Ciderlight...** (under the graphics preset):
+
+- **Shaders**: Off (Metal renderer, vanilla look), Low or High. A-series GPUs and the plain M1, M2, M3 and M4 default to
+  Low (smaller shadow maps, fewer samples, lighter water reflections, world drawn at about two thirds resolution);
+  everything else defaults to High.
+- **Shadows**, **Waving Plants**, **Water Reflections**, **Ambient Occlusion**: each on by default. Shadows off also
+  skips the shadow maps and light shafts, which is the biggest saving.
+- **Render Scale**: the world's resolution, Auto (the quality's own) or 50 to 100%.
+
+Everything applies after a restart and is saved in `config/ciderlight.properties`.
 
 JVM `-D` overrides: `ciderlight.quality=low|high`, `ciderlight.shaders=false`, `ciderlight.renderScale=<0.25–1>`,
 `ciderlight.shadowSize`, `ciderlight.shadowDistance`, `ciderlight.fogDistance`, `ciderlight.waterReflections=false`,
-`ciderlight.waving=false`, `ciderlight.ao=false`, `ciderlight.framePacing=true`, `ciderlight.debug=true`,
+`ciderlight.waving=false`, `ciderlight.ao=false`, `ciderlight.shadows=false`, `ciderlight.framePacing=true`, `ciderlight.debug=true`,
 `ciderlight.disable=true` (fall back to vanilla backends).
 
 ## Installing

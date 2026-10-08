@@ -29,8 +29,9 @@ enum Quality {
     final int fogRows;
     final int aoRows;
     /**
-     * The world's resolution as a fraction of the window's, in each direction (-Dciderlight.renderScale overrides it,
-     * 0.25 to 1). The HUD and menus are always drawn at the window's full resolution.
+     * The world's resolution as a fraction of the window's, in each direction (the Render Scale setting,
+     * RenderScaleSetting, and -Dciderlight.renderScale override it, 0.25 to 1). The HUD and menus are always drawn at
+     * the window's full resolution.
      */
     final float renderScale;
 
@@ -42,7 +43,9 @@ enum Quality {
         this.fogRows = fogRows;
         this.aoRows = aoRows;
         String forced = System.getProperty("ciderlight.renderScale");
-        this.renderScale = Math.clamp(forced != null ? Float.parseFloat(forced) : renderScale, 0.25F, 1.0F);
+        Float chosen = RenderScaleSetting.savedScale();
+        float scale = forced != null ? Float.parseFloat(forced) : chosen != null ? chosen : renderScale;
+        this.renderScale = Math.clamp(scale, 0.25F, 1.0F);
     }
 
     /** Prepended to every shader source: the march lengths in composite.metal and reflection.metal follow it. */
@@ -73,7 +76,7 @@ enum Quality {
                 : lowEnd(deviceName) ? LOW : HIGH;
         };
         LOGGER.info("Ciderlight: {} quality for {}, world at {}% resolution{}", quality.name().toLowerCase(Locale.ROOT), deviceName,
-            Math.round(quality.renderScale * 100.0F), forced.equals("auto") ? " (Video Settings > Shaders to change)" : "");
+            Math.round(quality.renderScale * 100.0F), forced.equals("auto") ? " (Video Settings > Ciderlight to change)" : "");
         return quality;
     }
 
