@@ -511,16 +511,26 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
 #else
             float traced = smoothstep(0.025, 0.09, mirror);
 #endif
+            ReflectionHit hit = {float2(0.0), 0.0, 0.0, 0.0};
             if (traced > 0.0) {
-                ReflectionHit hit = trace_reflection(opaqueDepth, vp, in.worldPos + n * 0.03, R);
+                hit = trace_reflection(opaqueDepth, vp, in.worldPos + n * 0.03, R);
+            }
+            // Whether the rays of the pixel column beside this one, in its 2x2 quad, found nothing and show the sky.
+            // Read outside the branch above: every pixel of the quad (one water face) takes part.
+            float nothing = traced > 0.0 && hit.confidence == 0.0 && hit.hidden == 0.0 ? 1.0 : 0.0;
+            float besideNothing = 0.5 * (quad_shuffle_xor(nothing, 1) + quad_shuffle_xor(nothing, 3));
+            if (traced > 0.0) {
                 // A ray lost behind something nearer the camera (a tree in front of far water) reflects what that
                 // hides. Bright sky there stands out against the terrain mirrored around it, and a shallow ray most
                 // often ends in terrain, so the guess for those is the dark water colour rather than the sky. Unless
                 // the ray passed behind something on the way (too far behind it to count as its reflection): that
                 // thing's colour is the better guess, being what the neighbouring rays meet. A lone ray that slips
                 // behind a tree's trunk or leaves while its neighbours hit them was otherwise a black speck.
+                // Where the neighbouring column's rays found nothing, the guess is the sky they show: under a canopy
+                // most rays pass beside it to the sky, and the few ending on a leaf texel drew dark streaks down the
+                // water (the leaves' cut-out pattern decides which columns, so they cannot be told apart alone).
                 float3 lostColor = hit.distance > 0.0 ? opaqueColor.sample(nearestClamp, hit.uv).rgb : deep;
-                reflColor = mix(reflColor, lostColor, hit.hidden * traced * (1.0 - smoothstep(0.1, 0.5, R.y)));
+                reflColor = mix(reflColor, lostColor, hit.hidden * (1.0 - besideNothing) * traced * (1.0 - smoothstep(0.1, 0.5, R.y)));
                 if (hit.confidence > 0.0) {
                     // Fetch the same texel whose depth was validated. Linear colour filtering could
                     // pull an unrelated foreground neighbour back into the reflection at silhouettes.
