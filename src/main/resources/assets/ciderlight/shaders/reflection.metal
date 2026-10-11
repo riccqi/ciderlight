@@ -7,6 +7,8 @@ struct ReflectionHit {
     // Above 0 when the ray left the screen or its range behind something in front of it: what it reflects is unknown.
     // 1 for the dark water guess; with `distance` set, how strongly to show the first thing it passed behind (at `uv`).
     float hidden;
+    // For a lost ray (`hidden` above 0): how far (in blocks) behind what is on screen there it ended.
+    float behind;
 };
 
 static float3 reflection_eye(float4x4 vp) {
@@ -145,7 +147,7 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
         float4 sample = reflection_probe(depth, coefficients, clipOrigin + clipStep * t, shift);
         if (sample.w == 0.0) {
             fallback.hidden = fallback.confidence > 0.0 ? 0.0 : reflection_hidden(previous, clipOrigin + clipStep * previousT, clipOrigin, clipStep);
-            if (fallback.hidden > 0.0 && lostT > 0.0) { fallback.uv = lostUV; fallback.distance = lostT; fallback.hidden *= lostWeight; }
+            if (fallback.hidden > 0.0 && lostT > 0.0) { fallback.uv = lostUV; fallback.distance = lostT; fallback.hidden *= lostWeight; fallback.behind = previous.z; }
             return fallback;
         }
         if (sample.z >= 0.0 && previous.z < 0.0) {
@@ -227,6 +229,6 @@ static ReflectionHit trace_reflection(depth2d<float> depth, float4x4 vp, float3 
         stride *= REFLECTION_STEP_GROWTH;
     }
     fallback.hidden = fallback.confidence > 0.0 ? 0.0 : reflection_hidden(previous, clipOrigin + clipStep * previousT, clipOrigin, clipStep);
-    if (fallback.hidden > 0.0 && lostT > 0.0) { fallback.uv = lostUV; fallback.distance = lostT; fallback.hidden *= lostWeight; }
+    if (fallback.hidden > 0.0 && lostT > 0.0) { fallback.uv = lostUV; fallback.distance = lostT; fallback.hidden *= lostWeight; fallback.behind = previous.z; }
     return fallback;
 }

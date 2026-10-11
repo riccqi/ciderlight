@@ -519,6 +519,8 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             // Read outside the branch above: every pixel of the quad (one water face) takes part.
             float nothing = traced > 0.0 && hit.confidence == 0.0 && hit.hidden == 0.0 ? 1.0 : 0.0;
             float besideNothing = 0.5 * (quad_shuffle_xor(nothing, 1) + quad_shuffle_xor(nothing, 3));
+            float hitSomething = hit.confidence > 0.0 ? 1.0 : 0.0;
+            float besideHit = 0.5 * (quad_shuffle_xor(hitSomething, 1) + quad_shuffle_xor(hitSomething, 3));
             if (traced > 0.0) {
                 // A ray lost behind something nearer the camera (a tree in front of far water) reflects what that
                 // hides. Bright sky there stands out against the terrain mirrored around it, and a shallow ray most
@@ -529,8 +531,13 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
                 // Where the neighbouring column's rays found nothing, the guess is the sky they show: under a canopy
                 // most rays pass beside it to the sky, and the few ending on a leaf texel drew dark streaks down the
                 // water (the leaves' cut-out pattern decides which columns, so they cannot be told apart alone).
+                // A ray that ended far behind what is on screen there has gone well past the thing it passed behind
+                // and is only hidden by a canopy in front: it shows the sky too, unless the neighbouring column hit
+                // something (then it is a ray that slipped through a reflected tree and takes its colour).
+                float farBehind = smoothstep(16.0, 48.0, hit.behind) * (1.0 - besideHit);
                 float3 lostColor = hit.distance > 0.0 ? opaqueColor.sample(nearestClamp, hit.uv).rgb : deep;
-                reflColor = mix(reflColor, lostColor, hit.hidden * (1.0 - besideNothing) * traced * (1.0 - smoothstep(0.1, 0.5, R.y)));
+                reflColor = mix(reflColor, lostColor, hit.hidden * (1.0 - besideNothing) * (1.0 - farBehind) * traced
+                                                      * (1.0 - smoothstep(0.1, 0.5, R.y)));
                 if (hit.confidence > 0.0) {
                     // Fetch the same texel whose depth was validated. Linear colour filtering could
                     // pull an unrelated foreground neighbour back into the reflection at silhouettes.
