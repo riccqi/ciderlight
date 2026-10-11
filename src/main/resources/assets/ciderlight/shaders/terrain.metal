@@ -496,9 +496,10 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
             float3 sky = frame.solarDir.w > 0.5 ? atmosphere_sky(frame, R) : fog.FogColor.rgb;
             // Covered water (low sky light) must not mirror a bright sky it cannot see.
             float3 reflColor = mix(deep, sky, smoothstep(0.3, 0.95, skyL));
-            // Schlick's curve with a softer exponent than 5: a little more mirror at the shallow angles water is
-            // mostly seen at, so the banks and sky show in it as they do on a calm river.
-            float mirror = min(0.02 + 0.98 * pow(1.0 - saturate(dot(-V, nn)), 3.5), 0.92);
+            // Schlick's curve. A softer exponent than 5 barely strengthens the banks mirrored at shallow angles, but
+            // nearly doubles the reflection further down, laying the mirrored shore over the lit bottom of clear
+            // shallow water (a coral reef showed two equally sharp pictures, one on the other).
+            float mirror = min(0.02 + 0.98 * pow(1.0 - saturate(dot(-V, nn)), 5.0), 0.92);
             // Seen from steeply above, water reflects about 2% of what is over it: whether that is the traced scene
             // or the sky cannot be told apart, so the ray is only traced where the reflection shows. The hand-over is
             // spread over a wide range of angles: a narrow one shows as a line across the water when looking down.
