@@ -63,6 +63,11 @@ struct Fog {
 #define SPRITE_FLAME 3  // all flame: fire, campfire fire
 #define SPRITE_GLOW 4   // has a flame in it: torches, lanterns, lit campfire logs
 #define SPRITE_WATER_GLASS 5 // water's side against glass or leaves (vanilla's overlay texture)
+#define SPRITE_WATER 6       // water's still and flowing sprites
+
+static bool water_sprite(int kind) {
+    return kind == SPRITE_WATER || kind == SPRITE_WATER_GLASS;
+}
 
 // Which special sprite this atlas texel belongs to (SPRITE_*, 0 for none): one lookup in the sprite map.
 static int sprite_kind(const device uchar *spriteMap, float2 uv) {
@@ -384,9 +389,7 @@ fragment float4 terrain_fragment(VertexOut in [[stage_in]],
         if (dot(n, -in.worldPos) < 0.0) {
             n = -n;
         }
-        // Water carries the biome water tint in its vertex colour; ice and glass are untinted (grey AO shading only).
-        float tint = max(in.color.r, max(in.color.g, in.color.b)) - min(in.color.r, min(in.color.g, in.color.b));
-        bool water = tint > 0.08;
+        bool water = water_sprite(kind);
         // Ice is drawn nearly opaque so the water underneath (and its reflections) hardly show through it.
         if (!water && n.y > 0.7 && sprite_kind(spriteMap, in.uv0) == SPRITE_ICE) {
             color.a = max(color.a, 0.94);
@@ -598,7 +601,6 @@ struct ShadowOut {
     float2 mapUV;      // where this point falls in the shadow map
     float2 uv0;
     float3 color;      // vertex colour (biome tint)
-    float tintSpread;  // > 0.08 for biome-tinted blocks: foliage, water
 };
 
 vertex ShadowOut shadow_vertex(VertexIn in [[stage_in]],
@@ -614,7 +616,6 @@ vertex ShadowOut shadow_vertex(VertexIn in [[stage_in]],
     out.mapUV = float2(out.position.x * 0.5 + 0.5, 0.5 - out.position.y * 0.5);
     out.uv0 = in.UV0;
     out.color = in.Color.rgb;
-    out.tintSpread = max(in.Color.r, max(in.Color.g, in.Color.b)) - min(in.Color.r, min(in.Color.g, in.Color.b));
     return out;
 }
 
@@ -635,7 +636,8 @@ fragment void shadow_fragment_cutout(ShadowOut in [[stage_in]],
 fragment float4 shadow_fragment_translucent(ShadowOut in [[stage_in]],
                                             texture2d<float> atlas [[texture(IDX_ATLAS)]],
                                             sampler atlasSampler [[sampler(IDX_ATLAS)]],
-                                            depth2d<float> shadowMap [[texture(IDX_SHADOW)]]) {
+                                            depth2d<float> shadowMap [[texture(IDX_SHADOW)]],
+                                            const device uchar *spriteMap [[buffer(IDX_FOLIAGE)]]) {
     constexpr sampler nearestClamp(filter::nearest, address::clamp_to_edge);
     // This texel covers several of the shadow map's: it is hidden only if it is behind the caster in all of them.
     float4 casters = shadowMap.gather(nearestClamp, in.mapUV);
@@ -646,7 +648,7 @@ fragment float4 shadow_fragment_translucent(ShadowOut in [[stage_in]],
     if (albedo.a < 0.1) {
         discard_fragment();
     }
-    bool water = in.tintSpread > 0.08;
+    bool water = water_sprite(sprite_kind(spriteMap, in.uv0));
     float3 transmission = material_transmission(albedo, in.color, water);
     // RGB multiplies transmission; MIN blending in alpha records the first translucent surface.
     return float4(transmission, in.position.z);
