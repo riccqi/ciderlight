@@ -177,6 +177,8 @@ public final class MetalShaders {
     };
     /** Water's side against glass or leaves: a pool or tank seen through its wall (listed after the glow ones). */
     private static final String[] WATER_GLASS_SPRITES = {"water_overlay"};
+    /** Water's own sprites: the translucent pass draws these as water (listed after the water-glass ones). */
+    private static final String[] WATER_SPRITES = {"water_flow", "water_still"};
     /** Particle sprites that are all flame or molten: drawn at full brightness like the flames of blocks. */
     private static final String[] FLAME_PARTICLES = {"flame", "soul_fire_flame", "copper_fire_flame", "lava"};
     /** The block of FrameData from airNear up to waterParams; its end (after `reserved` in frame.metal) fixes the later offsets. */
@@ -1402,7 +1404,7 @@ public final class MetalShaders {
     }
 
     /** Sprite materials in the high four bits of a sprite-map byte (SPRITE_* in terrain.metal). */
-    private static final String[][] MATERIAL_SPRITES = {SHINY_SPRITES, ICE_SPRITES, FLAME_SPRITES, GLOW_SPRITES, WATER_GLASS_SPRITES};
+    private static final String[][] MATERIAL_SPRITES = {SHINY_SPRITES, ICE_SPRITES, FLAME_SPRITES, GLOW_SPRITES, WATER_GLASS_SPRITES, WATER_SPRITES};
 
     /**
      * Builds the sprite map from the block registry and the loaded block models; cheap when nothing changed. Each
@@ -1958,7 +1960,7 @@ public final class MetalShaders {
         MetalNative.passSetDepthClamp(enc, true); // as for the depth map
         MetalNative.passSetBytes(enc, FRAME_INDEX, uniforms, FRAME_BYTES, MetalConst.STAGE_VERTEX);
         MetalNative.passSetTexture(enc, FRAME_INDEX, depth, 0L, MetalConst.STAGE_FRAGMENT);
-        MetalNative.passSetBuffer(enc, FOLIAGE_INDEX, this.foliageBuffer(), 0L, MetalConst.STAGE_VERTEX);
+        MetalNative.passSetBuffer(enc, FOLIAGE_INDEX, this.foliageBuffer(), 0L, BOTH);
         boolean bound = false;
         for (TerrainDraw draw : this.terrainDraws) {
             if (draw.kind() != KIND_TRANSLUCENT) {
